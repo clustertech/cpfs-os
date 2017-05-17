@@ -140,6 +140,8 @@ install(TARGETS cpfs_server cpfs_client cpfs_cli cpfs_keygen
 install(PROGRAMS scripts/cpfs_configure_client DESTINATION sbin)
 install(PROGRAMS scripts/mount.cpfs DESTINATION /sbin)
 install(PROGRAMS scripts/cpfs-meta scripts/cpfs-data DESTINATION /etc/init.d)
+install(DIRECTORY docs/third-party-copyrights DESTINATION share/doc/cpfs-os)
+install(DIRECTORY docs/user-guide DESTINATION share/doc/cpfs-os)
 install(FILES README.md LICENSE DESTINATION share/doc/cpfs-os)
 install(FILES default/cpfs-meta default/cpfs-data DESTINATION /etc/default)
 

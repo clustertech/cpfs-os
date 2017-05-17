@@ -1,0 +1,33 @@
+FROM fedora:25
+LABEL maintainer cpfs@clustertech.com
+RUN dnf install -y \
+      attr \
+      boost-devel \
+      botan-devel \
+      cmake \
+      fuse \
+      fuse-devel \
+      gcc-c++ \
+      libattr-devel \
+      make \
+      patch \
+      perl-Digest-MD5 \
+      rpm-build \
+      unzip \
+      wget
+RUN dnf -y update && dnf clean all && useradd -m builder \
+    && usermod -a -G audio builder
+ADD . /home/builder/
+RUN chown -R builder.builder /home/builder/
+USER builder
+RUN cd && \
+    ./build_dep
+RUN cd && \
+    mkdir build && \
+    cd build && \
+    cmake .. && \
+    make -j 6 -l 4 && \
+    make DESTDIR=install install && \
+    make package && \
+    mkdir package && \
+    mv cpfs-os* package
