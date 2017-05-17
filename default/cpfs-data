@@ -1,0 +1,5 @@
+# METADATA_SERVER="192.168.0.1:5000,192.168.0.2:5000"
+# DATA_DIR=/var/lib/cpfs-data
+DS_PORT=5000
+LOG_LEVEL=5
+LOG_PATH=/var/log/cpfs-data.log

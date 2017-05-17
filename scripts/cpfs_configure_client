@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# Copyright 2014 ClusterTech Ltd
+#
+# Usage:
+# /usr/sbin/configure_client [meta servers] [mount point] [log path] [ms-perms]
+set -e
+
+: "${FSTAB:=/etc/fstab}"
+
+main() {
+    if [[ $1 = -h || $1 = --help ]]; then
+        echo "Usage: $(basename "$0") " \
+            "[MS addrs] [mount-point] [log path] [ms-perms]"
+        exit 0
+    fi
+    local meta_server mount_point log_path ms_perms
+    read_vars "$@"
+    mount_point=$(sub_spaces "${mount_point}")
+    check_mount_point "${mount_point}"
+    log_path=$(sub_spaces "${log_path}")
+    local opts=log-path=${log_path}
+    if [[ ${ms_perms} != *[Yy]* ]]; then
+        opts+=,default_permissions
+    fi
+    opts+=,_netdev
+    local entry="${meta_server} ${mount_point} cpfs ${opts} 0 0"
+    echo "The following entry will be appended to ${FSTAB}:"
+    echo "${entry}"
+    local confirm
+    read -p "Continue? (y/n) " confirm
+    if [[ ${confirm} = [Yy] ]]; then
+        echo "$entry" >> "${FSTAB}"
+        echo "Entry added."
+    fi
+}
+
+read_vars() {
+    meta_server=$1
+    mount_point=$2
+    log_path=$3
+    ms_perms=$4
+    while true; do
+        meta_server=$(remove_spaces "${meta_server}")
+        if [[ -n ${meta_server} ]]; then
+            break
+        fi
+        read -p "Enter the meta server(s): (IP1:Port,IP2:Port) " meta_server
+    done
+    while true; do
+        mount_point=${mount_point%/}
+        if [[ -n ${mount_point} ]]; then
+            if [[ ! -d ${mount_point} ]]; then
+                echo "${mount_point} is not an existing directory."
+            else
+                break
+            fi
+        fi
+        read -p "Enter the path to mount point: " mount_point
+    done
+    while [[ -z ${log_path} ]]; do
+        read -p "Enter the path to the log file: " log_path
+    done
+    if [[ -z ${ms_perms} ]]; then
+        read -p "Use MS-based permission [n]? " ms_perms
+        : "${ms_perms:=n}"
+    fi
+}
+
+check_mount_point() {
+    local mount_point=$1
+    {
+        local words
+        while read -a words; do
+            if [[ ${words[1]} = "${mount_point}" || \
+                  ${words[1]} = "${mount_point}"/* ]]; then
+                echo "Error: ${mount_point} already in ${FSTAB}"
+                exit 1
+            fi
+        done
+    } < "${FSTAB}"
+}
+
+remove_spaces() {
+    sed -r 's/\s//g' <<< "$1"
+}
+
+sub_spaces() {
+    sed -r 's/\s/\\040/g' <<< "$1"
+}
+
+main "$@"

@@ -1,0 +1,49 @@
+#!/bin/bash
+#
+# Copyright 2017 ClusterTech Ltd
+#
+# Usage:
+# /sbin/mount.cpfs meta-servers mount-point [-o options]
+set -e
+META_SERVER=$1
+MOUNT_POINT=$2
+
+if [ -z "${META_SERVER}" ]; then
+    echo "CPFS Error: Missing metadata server(s)"
+    exit 1
+fi
+
+if [ -z "${MOUNT_POINT}" ] || [ ! -d "${MOUNT_POINT}" ]; then
+    echo "CPFS Error: The mount point does not exist"
+    exit 1
+fi
+
+shift 2
+
+# Remove _netdev and noauto from comma-separated string $1 and reprint
+filter() {
+    local IFS=',' OUT=() ARG=
+    for ARG in $1; do
+        case "${ARG}" in
+            _netdev|noauto)
+                ;;
+            *)
+                OUT+=("${ARG}")
+                ;;
+        esac
+    done
+    echo -n "${OUT[*]}"
+}
+
+OPTS=()
+while [[ $# > 0 ]]; do
+    OPTS+=("$1")
+    if [[ $1 = "-o" ]]; then
+        OPTS+=("$(filter "$2")")
+        shift
+    fi
+    shift
+done
+
+exec /usr/local/sbin/cpfs_client -o meta-server="${META_SERVER//,/\\,}" \
+    -o allow_other,big_writes,atomic_o_trunc "${OPTS[@]}" "${MOUNT_POINT}"

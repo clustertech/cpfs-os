@@ -1,0 +1,5 @@
+# METADATA_SERVER="192.168.0.1:5000,192.168.0.2:5000"
+# METADATA_DIR=/var/lib/cpfs-meta
+LOG_LEVEL=5
+LOG_PATH=/var/log/cpfs-meta.log
+MS_PERMS=0

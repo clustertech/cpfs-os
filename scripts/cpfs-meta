@@ -1,0 +1,102 @@
+#!/bin/bash
+
+### BEGIN INIT INFO
+# Provides:          cpfs-meta
+# Required-Start:    $time $network
+# Required-Stop:     $network
+# Default-Start:
+# Default-Stop:      0 1 2 6
+# Short-Description: CPFS metadata server
+# Description:       Run CPFS metadata server.  Configure it in
+#                    /etc/default/cpfs-meta
+### END INIT INFO
+
+. /lib/lsb/init-functions
+NAME=cpfs-meta
+CONFIG_PATH=/etc/default/${NAME}
+[[ -e ${CONFIG_PATH} ]] && . "${CONFIG_PATH}"
+DAEMON=/usr/local/sbin/cpfs_server
+[[ -x ${DAEMON} ]] || exit 5
+PIDFILE=/var/run/${NAME}.pid
+
+RETVAL=0
+
+start_setup_args() {
+    local ms ms_ip_port ms_idx local_ip role
+    if [[ -z ${METADATA_SERVER} ]]; then
+        echo "Please specify METADATA_SERVER in ${CONFIG_PATH}" >&2
+        exit 1
+    fi
+    ms=(${METADATA_SERVER//,/ })
+    ms_ip_port=(${ms[0]//:/ })
+    local_ip=$(ip route get "${ms_ip_port[0]}" |
+        head -n 1 | sed -e 's/.*src //' -e 's/ .*$//')
+    for ms_idx in "${!ms[@]}"; do
+        if [[ "${ms[$ms_idx]/:*/}" == "${local_ip}" ]]; then
+            role=MS$((ms_idx + 1))
+            break
+        fi
+    done
+    [[ -n ${role} ]] || {
+        echo "Cannot find MS role" >&2
+        exit 1
+    }
+    if [[ -z ${METADATA_DIR} ]]; then
+        echo "Please specify METADATA_DIR in ${CONFIG_PATH}" >&2
+        exit 1
+    fi
+    ARGS=(--meta-server="${METADATA_SERVER}" --role="${role}"
+          --data="${METADATA_DIR}" --ms-perms="${MS_PERMS:-0}"
+          --log-level="${LOG_LEVEL:-5}"
+          --log-path="${LOG_PATH:-/var/log/cpfs-meta.log}"
+          --daemonize=true --pidfile="${PIDFILE}")
+}
+
+log_msg() {
+    local msg=$1
+    local res=$2
+    if [[ "${res}" = 0 ]]; then
+        log_success_msg "${msg}"
+    else
+        log_failure_msg "${msg}"
+    fi
+}
+
+case "$1" in
+    start)
+        start_setup_args
+        start_daemon -p "${PIDFILE}" "${DAEMON}" "${ARGS[@]}"
+        RETVAL=$?
+        log_msg "Starting ${NAME}" ${RETVAL}
+        ;;
+    stop)
+        killproc -p "${PIDFILE}" "${DAEMON}"
+        RETVAL=$?
+        log_msg "Stopping ${NAME}" ${RETVAL}
+        ;;
+    restart|reload)
+        "$0" stop && sleep 2 && "$0" start
+        RETVAL=$?
+        ;;
+    status)
+        pidofproc -p "${PIDFILE}" "${DAEMON}" > /dev/null
+        RETVAL=$?
+        case ${RETVAL} in
+          0)
+            echo "${NAME} is running"
+            ;;
+          3)
+            echo "${NAME} is not running"
+            ;;
+          *)
+            echo "${NAME} is in unexpected state (${RETVAL})"
+            ;;
+        esac
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload|status}"
+        exit 2
+        ;;
+esac
+
+exit $RETVAL

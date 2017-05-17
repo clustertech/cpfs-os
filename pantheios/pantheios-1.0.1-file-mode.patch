@@ -1,0 +1,12 @@
+diff -ruN pantheios-1.0.1-beta214/src/backends/bec.file.cpp pantheios-1.0.1-beta214-new/src/backends/bec.file.cpp
+--- pantheios-1.0.1-beta214/src/backends/bec.file.cpp	2011-05-23 17:08:12.000000000 +0800
++++ pantheios-1.0.1-beta214-new/src/backends/bec.file.cpp	2013-04-30 17:44:57.000000000 +0800
+@@ -1192,7 +1192,7 @@
+         flags |= O_APPEND;
+     }
+ 
+-    m_hFile = ::open(fileName, flags, S_IRWXU | S_IRWXG);
++    m_hFile = ::open(fileName, flags, 0666);
+ 
+ #elif defined(PLATFORMSTL_OS_IS_WINDOWS)
+ 

@@ -1,0 +1,1 @@
+systemctl 2>&1 | grep -q -- '-\.mount' && systemctl daemon-reload || true
