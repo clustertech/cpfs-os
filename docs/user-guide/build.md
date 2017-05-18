@@ -10,7 +10,8 @@ in CentOS 6 can do the trick:
 With it, you can build CPFS-OS with the following command, replacing
 `<Dockerfile>` by the desired Dockerfile of the target OS and
 `<src-dir>` by the directory containing the Dockerfile and other
-source files.
+source files.  (Dockerfiles can be found under the `docker`
+directory.)
 
     # docker build -t cpfs-os-build -f <Dockerfile> <src-dir>
 
