@@ -133,8 +133,9 @@ These steps are discussed in the sections below.
 
 ## Installing the CPFS package
 
-Refer to `build.md` to create the package and install it.  For a
-Redhat based system (CentOS, RHEL, Fedora), simply run `yum
+You may either download the CPFS package or create it yourselves from
+source (Refer to `build.md` to create the package.)  To install it for
+a Redhat based system (CentOS, RHEL, Fedora), simply run `yum
 localinstall <filename>` (after `yum install epel-release` for CentOS
 7).  For a Debian based system, run `dpkg -i <filename>` and then
 `apt-get install -f`.  The package includes the following.
@@ -182,9 +183,10 @@ In `cpfs-meta`:
 
     METADATA_DIR=/var/lib/cpfs-meta
 
-The directory where metadata data is stored in metadata servers.  It
-should have permission 0711.  You should not modify the directory in
-any way other than through CPFS, as it may lead to data inconsistency.
+This is the directory where metadata data is stored in metadata
+servers.  It should have permission 0711.  You should not modify the
+directory in any way other than through CPFS, as it may lead to data
+inconsistency.
 
     MS_PERMS=0
 
@@ -283,7 +285,7 @@ the init system being used.  E.g., for a systemd system, you can
 execute:
 
     $ sudo systemctl enable cpfs-meta  # For MS
-    $ sudo systemctl enable cpfs-data  # For DS  E.g., in a sys
+    $ sudo systemctl enable cpfs-data  # For DS
 
 To start an FC, run
 
@@ -331,7 +333,7 @@ monitoring and management.  The following commands are supported:
 
 To start the `cpfs_cli`, use:
 
-    $ sudo cpfs_cli --meta-server=<ip:port of MS1>[,ip:port of M2]
+    $ sudo cpfs_cli --meta-server=<ip:port of MS1>[,ip:port of M2] [command]
 
 If run on one of the MS, --meta-server parameter is not needed (it is
 loaded from the `/etc/default/cpfs-meta` file).
