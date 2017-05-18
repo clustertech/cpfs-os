@@ -61,16 +61,31 @@ bool LoadClientOpts(int argc, char* argv[], cpfs::AdminConfigItems* configs) {
        (boost::format("The socket read timeout. Default: %.2f seconds")
             % cpfs::kDefaultSocketReadTimeout).str().c_str())
       ("force-start", po::value<bool>()->default_value(false),
-        "Whether to start MS forcibly when CPFS is not fully ready");
+       "Whether to start MS forcibly when CPFS is not fully ready");
+  po::options_description all("All options");
+  all.add(desc);
+  all.add_options()
+      ("command", po::value< std::vector<std::string> >(),
+        "Command to run (interactive if not specified)");
+  po::positional_options_description p;
+  p.add("command", -1);
+  po::store(po::command_line_parser(argc, argv)
+            .options(all).positional(p).run(), vm);
+  po::notify(vm);
 
-  po::store(po::parse_command_line(argc, argv, desc), vm);
   if (vm.count("help")) {
     std::stringstream desc_ss;
     desc.print(desc_ss);
+    std::fprintf(
+        stderr, "CPFS Command Line administration interface\n\n"
+        "Run a CLI command if provided, or prompt for commands repeatedly.\n"
+        "The 'help' command gives a list of possible commands.\n"
+        "\n"
+        "Usage: %s [options] [command]\n\n", argv[0]);
     std::fprintf(stderr, "%s", desc_ss.str().c_str());
     return false;
   }
-  po::notify(vm);
+
   std::string meta_server;
   if (vm.count("meta-server")) {
     meta_server = vm["meta-server"].as<std::string>();
@@ -96,6 +111,12 @@ bool LoadClientOpts(int argc, char* argv[], cpfs::AdminConfigItems* configs) {
   configs->heartbeat_interval = vm["heartbeat-interval"].as<double>();
   configs->socket_read_timeout = vm["socket-read-timeout"].as<double>();
   configs->force_start = vm["force-start"].as<bool>();
+  if (vm.count("command")) {
+    configs->command = boost::algorithm::join(
+        vm["command"].as< std::vector<std::string> >(), " ");
+  } else {
+    configs->command = "";
+  }
   return true;
 }
 
@@ -121,8 +142,7 @@ int main(int argc, char* argv[]) {
     boost::scoped_ptr<cpfs::client::ICpfsCLI> cli(
         cpfs::client::MakeCpfsCLI(admin.get(), console.get()));
     if (cli->Init(configs.force_start)) {
-      // TODO(Joseph): Handle non-interactive case (future)
-      cli->Prompt();
+      cli->Run(configs.command);
     } else {
       std::fprintf(stderr, "Cannot connect to the meta server(s)");
     }

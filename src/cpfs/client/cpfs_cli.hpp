@@ -30,19 +30,22 @@ class ICpfsCLI {
    */
   virtual bool Init(bool force_start) = 0;
   /**
-   * Prompt an interactive shell and handle commands from user
+   * Either run the command or an interactive shell
+   *
+   * @param command The command to run, use empty string to run
+   * interactive shell
    */
-  virtual void Prompt() = 0;
+  virtual void Run(std::string command) = 0;
   /**
    * Handle status query
    *
-   * @param nodes The nodes to query, all status are returned if empty.
+   * @param nodes The nodes to query, all status are returned if empty
    */
   virtual bool HandleQueryStatus(const std::vector<std::string>& nodes) = 0;
   /**
    * Handle detail info query
    *
-   * @param nodes The nodes to query, all info are returned if empty.
+   * @param nodes The nodes to query, all info are returned if empty
    */
   virtual bool HandleQueryInfo(const std::vector<std::string>& nodes) = 0;
   /**

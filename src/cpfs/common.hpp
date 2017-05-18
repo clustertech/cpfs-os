@@ -91,6 +91,7 @@ struct AdminConfigItems {
   double heartbeat_interval;  /**< The heartbeat interval in seconds */
   double socket_read_timeout;  /**< The socket read timeout in seconds */
   bool force_start;  /**< Whether to forcibly start MS when rejected */
+  std::string command;  /**< The command to run */
 };
 
 /**

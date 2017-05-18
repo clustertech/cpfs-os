@@ -86,65 +86,79 @@ class CpfsCLI : public ICpfsCLI {
     return false;
   }
 
-  void Prompt() {
-    while (true) {
-      std::string input = console_->ReadLine();
-      std::vector<std::string> parsed;
-      boost::split(parsed, input, boost::is_any_of(" "),
-                   boost::algorithm::token_compress_on);
-      if (parsed[0] == "status") {
-        HandleQueryStatus(
-            std::vector<std::string>(parsed.begin() + 1, parsed.end()));
-      } else if (parsed[0] == "info") {
-        HandleQueryInfo(
-            std::vector<std::string>(parsed.begin() + 1, parsed.end()));
-      } else if (parsed[0] == "config") {
-        if (parsed.size() < 2) {
-          console_->PrintLine("Usage: config [list|set]");
-          continue;
-        }
-        if (parsed[1] == "list") {
-          HandleConfigList(
-              std::vector<std::string>(parsed.begin() + 1, parsed.end()));
-        } else if (parsed[1] == "set") {
-          bool success = false;
-          do {
-            if (parsed.size() < 5)
-              break;
-            std::string target = parsed[2];
-            boost::to_upper(target);
-            if (target.substr(0, 2) != "MS" && target != "DS")
-              break;
-            if (target == "DS" && parsed.size() < 6)
-              break;
-            if (target == "DS")
-              HandleConfigChange(target + parsed[3], parsed[4], parsed[5]);
-            else
-              HandleConfigChange(target, parsed[3], parsed[4]);
-            success = true;
-          } while (0);
-          if (!success)
-            console_->PrintLine("Usage: config set [target] [config] [value]");
-        }
-      } else if (parsed[0] == "system") {
-        if (parsed.size() < 2) {
-          console_->PrintLine("Usage: system [shutdown|restart]");
-          continue;
-        }
-        if (parsed[1] == "shutdown") {
-          HandleSystemShutdown();
-          return;
-        }
-      } else if (parsed[0] == "exit") {
-        return;
-      } else if (parsed[0] == "help") {
-        console_->PrintLine(kHelpMessage);
-        continue;
-      } else {
-        console_->PrintLine(
-            (boost::format("Unknown command '%s'") % parsed[0]).str());
-      }
+  void Run(std::string command) {
+    if (command.empty()) {
+      while (true)
+        if (!RunCmd(console_->ReadLine()))
+          break;
+    } else {
+      RunCmd(command);
     }
+  }
+
+  /**
+   * Run a command and return whether it indicates interactive loop exit.
+   *
+   * @param input The command
+   *
+   * @return Whether the interactive loop should terminate
+   */
+  bool RunCmd(std::string input) {
+    std::vector<std::string> parsed;
+    boost::split(parsed, input, boost::is_any_of(" "),
+                 boost::algorithm::token_compress_on);
+    if (parsed[0] == "status") {
+      HandleQueryStatus(
+          std::vector<std::string>(parsed.begin() + 1, parsed.end()));
+    } else if (parsed[0] == "info") {
+      HandleQueryInfo(
+          std::vector<std::string>(parsed.begin() + 1, parsed.end()));
+    } else if (parsed[0] == "config") {
+      if (parsed.size() < 2) {
+        console_->PrintLine("Usage: config [list|set]");
+        return true;
+      }
+      if (parsed[1] == "list") {
+        HandleConfigList(
+            std::vector<std::string>(parsed.begin() + 1, parsed.end()));
+      } else if (parsed[1] == "set") {
+        bool success = false;
+        do {
+          if (parsed.size() < 5)
+            break;
+          std::string target = parsed[2];
+          boost::to_upper(target);
+          if (target.substr(0, 2) != "MS" && target != "DS")
+            break;
+          if (target == "DS" && parsed.size() < 6)
+            break;
+          if (target == "DS")
+            HandleConfigChange(target + parsed[3], parsed[4], parsed[5]);
+          else
+            HandleConfigChange(target, parsed[3], parsed[4]);
+          success = true;
+        } while (0);
+        if (!success)
+          console_->PrintLine("Usage: config set [target] [config] [value]");
+      }
+    } else if (parsed[0] == "system") {
+      if (parsed.size() < 2) {
+        console_->PrintLine("Usage: system [shutdown|restart]");
+        return true;
+      }
+      if (parsed[1] == "shutdown") {
+        HandleSystemShutdown();
+        return false;
+      }
+    } else if (parsed[0] == "exit") {
+      return false;
+    } else if (parsed[0] == "help") {
+      console_->PrintLine(kHelpMessage);
+    } else {
+      console_->PrintLine(
+          (boost::format("Unknown command '%s'") % parsed[0]).str());
+    }
+    return true;
   }
 
   bool HandleQueryStatus(const std::vector<std::string>& nodes) {

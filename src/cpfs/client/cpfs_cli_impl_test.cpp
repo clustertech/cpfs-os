@@ -86,141 +86,98 @@ TEST_F(CpfsCLITest, PromptHelp) {
       .WillOnce(Return(std::string("exit")));
 
   EXPECT_CALL(console_, PrintLine(_));
-  // Real call
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("");
 }
 
-TEST_F(CpfsCLITest, PromptQueryStatus) {
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("status")))
-      .WillOnce(Return(std::string("exit")));
-
+TEST_F(CpfsCLITest, RunQueryStatus) {
   cpfs::client::ClusterInfo cluster_info;
   cluster_info.ms_role = "MS1";
   cluster_info.ms_state = "Active";
   EXPECT_CALL(cpfs_admin_, QueryStatus())
       .WillOnce(Return(cluster_info));
 
-  EXPECT_CALL(console_, PrintLine(std::string("MS1: Active")));
+  EXPECT_CALL(console_, PrintLine("MS1: Active"));
   EXPECT_CALL(console_, PrintTable(_));
-  // Real call
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("status");
 }
 
-TEST_F(CpfsCLITest, PromptQueryInfo) {
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("info")))
-      .WillOnce(Return(std::string("exit")));
-
+TEST_F(CpfsCLITest, RunQueryInfo) {
   cpfs::client::DiskInfoList disk_info;
   EXPECT_CALL(cpfs_admin_, QueryDiskInfo())
       .WillOnce(Return(disk_info));
   EXPECT_CALL(console_, PrintTable(_));
-  // Real call
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("info");
 }
 
-TEST_F(CpfsCLITest, PromptConfigList) {
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("config list")))
-      .WillOnce(Return(std::string("exit")));
-
+TEST_F(CpfsCLITest, RunConfigList) {
   cpfs::client::ConfigList config_list;
   EXPECT_CALL(cpfs_admin_, ListConfig())
       .WillOnce(Return(config_list));
-  // Real call
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("config list");
 }
 
-TEST_F(CpfsCLITest, PromptConfigSet) {
+TEST_F(CpfsCLITest, RunConfigSet) {
   // Test DS with extra spaces
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("config set DS   0-1   log_severity 3")))
-      .WillOnce(Return(std::string("exit")));
-
   EXPECT_CALL(cpfs_admin_, ChangeConfig("DS0-1", "log_severity", "3"))
       .WillOnce(Return(true));
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("config set DS   0-1   log_severity 3");
 
   // Test MS
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("config set MS1 log_severity 3")))
-      .WillOnce(Return(std::string("exit")));
-
   EXPECT_CALL(cpfs_admin_, ChangeConfig("MS1", "log_severity", "3"))
       .WillOnce(Return(true));
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("config set MS1 log_severity 3");
 
   // Test lowercase
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("config set ms1 log_severity 3")))
-      .WillOnce(Return(std::string("exit")));
-
   EXPECT_CALL(cpfs_admin_, ChangeConfig("MS1", "log_severity", "3"))
       .WillOnce(Return(true));
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("config set ms1 log_severity 3");
 
   // Test unknown role
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("config set alien log_severity 3")))
-      .WillOnce(Return(std::string("exit")));
-
   EXPECT_CALL(console_,
               PrintLine("Usage: config set [target] [config] [value]"));
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("config set alien log_severity 3");
 }
 
-TEST_F(CpfsCLITest, PromptConfigHelp) {
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("config")))
-      .WillOnce(Return(std::string("exit")));
-
+TEST_F(CpfsCLITest, RunConfigHelp) {
   EXPECT_CALL(console_, PrintLine(std::string("Usage: config [list|set]")));
-  // Real call
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("config");
 }
 
-TEST_F(CpfsCLITest, PromptConfigSetHelp) {
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("config set")))
-      .WillOnce(Return(std::string("exit")));
-
+TEST_F(CpfsCLITest, RunConfigSetHelp) {
   EXPECT_CALL(console_,
               PrintLine("Usage: config set [target] [config] [value]"));
-  // Real call
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("config set");
 }
 
-TEST_F(CpfsCLITest, PromptUnknownCommandHelp) {
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("wrong commands")))
-      .WillOnce(Return(std::string("exit")));
-
+TEST_F(CpfsCLITest, RunUnknownCommandHelp) {
   EXPECT_CALL(console_,
               PrintLine(std::string("Unknown command 'wrong'")));
-  // Real call
-  cpfs_cli_->Prompt();
+
+  cpfs_cli_->Run("wrong commands");
 }
 
-TEST_F(CpfsCLITest, PromptSystem) {
-  EXPECT_CALL(console_, ReadLine())
-      .WillOnce(Return(std::string("system")))
-      .WillOnce(Return(std::string("exit")));
-
+TEST_F(CpfsCLITest, RunSystem) {
   EXPECT_CALL(console_, PrintLine("Usage: system [shutdown|restart]"));
 
-  // Real call
-  cpfs_cli_->Prompt();
+  cpfs_cli_->Run("system");
 }
 
 TEST_F(CpfsCLITest, PromptSystemStop) {
   EXPECT_CALL(console_, ReadLine())
       .WillOnce(Return(std::string("system shutdown")));
-
   EXPECT_CALL(cpfs_admin_, SystemShutdown());
 
-  // Real call
-  cpfs_cli_->Prompt();
+  cpfs_cli_->Run("");
 }
 
 TEST_F(CpfsCLITest, QueryStatus) {
