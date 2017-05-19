@@ -4,6 +4,14 @@ cmake_minimum_required(VERSION 2.8.9)
 project(cpfs-os)
 set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:/usr/local/lib/pkgconfig")
 
+if(DEP_PREFIX)
+  set(ENV{PKG_CONFIG_PATH}
+    "$ENV{DEP_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+  set(ENV{LIB} ${DEP_PREFIX}/lib:$ENV{LIB})
+  include_directories(${DEP_PREFIX}/include)
+  link_directories(${DEP_PREFIX}/lib)
+endif(DEP_PREFIX)
+
 if(LINK_STATIC)
   set(CMAKE_FIND_LIBRARY_SUFFIXES ".a;.so")
   set(BUILD_SHARED_LIBRARIES OFF)
