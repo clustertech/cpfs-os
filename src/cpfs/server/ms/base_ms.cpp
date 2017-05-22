@@ -27,6 +27,7 @@
 #include "shutdown_mgr.hpp"
 #include "thread_fim_processor.hpp"
 #include "time_keeper.hpp"
+#include "version.hpp"
 #include "server/durable_range.hpp"
 #include "server/ms/cleaner.hpp"
 #include "server/ms/conn_mgr.hpp"
@@ -75,7 +76,7 @@ class MetaServer : public BaseMetaServer {
   explicit MetaServer(const ConfigMgr& configs) : BaseMetaServer(configs) {}
 
   void Init() {
-    LOG(notice, Server, "CPFS Meta Server is running");
+    LOG(notice, Server, "CPFS Meta Server ", CPFS_VERSION, " is running");
     int term_signal = SIGUSR1;
     shutdown_mgr()->SetupSignals(&term_signal, 1);
     // Meta directory

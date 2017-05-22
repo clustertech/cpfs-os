@@ -190,6 +190,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
       log_level_ = cpfs_opts.log_level;
       std::free(cpfs_opts.log_level);
     }
+    LOG(notice, FS, "CPFS client ", CPFS_VERSION, " is running");
     if (cpfs_opts.meta_servers) {
       std::string meta_servers(cpfs_opts.meta_servers);
       boost::split(meta_servers_, meta_servers, boost::is_any_of(","));

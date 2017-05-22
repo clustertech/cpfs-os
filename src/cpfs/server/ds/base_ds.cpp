@@ -26,6 +26,7 @@
 #include "req_completion.hpp"
 #include "thread_fim_processor.hpp"
 #include "time_keeper.hpp"
+#include "version.hpp"
 #include "server/base_server.hpp"
 #include "server/ds/cleaner.hpp"
 #include "server/ds/conn_mgr.hpp"
@@ -49,7 +50,7 @@ class DataServer : public BaseDataServer {
    * @param configs The config items parsed
    */
   explicit DataServer(const ConfigMgr& configs) : BaseDataServer(configs) {
-    LOG(notice, Server, "CPFS Data Server is starting");
+    LOG(notice, Server, "CPFS Data Server ", CPFS_VERSION, " is running");
   }
 
   void Init() {
