@@ -49,9 +49,18 @@ appropriate if you want to modify CPFS-OS).  Simply read the
 Dockerfile closest to your distribution (they are quite simple) and
 follow the commands.
 
-The special case is for building CPFS-OS without root in CentOS 6,
-which is slightly complex because we need to build our own Boost,
-Botan, and FUSE library.  Here are some hints:
+If you run the unit tests as normal user, you need to ensure that the
+user has permission to run `fusermount`, and the user can access
+`/dev/fuse`.
+
+If you build CPFS for development, it is likely that you want to
+create a debug build instead of a release build.  To do so, use
+`-DCMAKE_BUILD_TYPE=Debug` when running `cmake`, instead of the
+`-DCMAKE_BUILD_TYPE=Release` specified in the Dockerfile.
+
+Building CPFS-OS without root in CentOS 6 is slightly complex because
+we need to build our own Boost, Botan, and FUSE library.  Here are
+some hints:
 
   * When configuring such libraries for building, you can use the
     `--prefix=<prefix>` argument to specify a location other than
@@ -62,7 +71,3 @@ Botan, and FUSE library.  Here are some hints:
     (use the one provided by the system, which has the necessary
     permissions).
   * Add the parameter `-DDEP_PREFIX=<prefix>` to the `cmake` command.
-
-In any case, if you run the unit tests as normal user, you need to
-ensure that the user has permission to run `fusermount`, and the user
-can access `/dev/fuse`.

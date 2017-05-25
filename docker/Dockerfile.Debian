@@ -33,7 +33,7 @@ RUN cd && \
 RUN cd && \
     mkdir build && \
     cd build && \
-    cmake .. && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
     make -j 6 -l 4 && \
     make DESTDIR=install install && \
     make package && \

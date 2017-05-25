@@ -54,7 +54,7 @@ RUN cd && \
 RUN cd && \
     mkdir build && \
     cd build && \
-    cmake -DLINK_STATIC=1 .. && \
+    cmake -DCMAKE_BUILD_TYPE=Release -DLINK_STATIC=1 .. && \
     make -j 6 -l 4 && \
     make DESTDIR=install install && \
     make package && \

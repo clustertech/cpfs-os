@@ -27,7 +27,7 @@ else(LINK_STATIC)
   set(FUSELIB ${FUSE_LIBRARIES})
 endif(LINK_STATIC)
 
-set(CMAKE_CXX_FLAGS "-include defs.hpp ${FUSE_CFLAGS_OTHER}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include defs.hpp ${FUSE_CFLAGS_OTHER}")
 include_directories(SYSTEM include /usr/include/botan-1.10 ${FUSE_INCLUDE_DIRS})
 include_directories(src/cpfs)
 link_directories(lib /usr/local/lib)
