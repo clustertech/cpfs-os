@@ -142,6 +142,11 @@ add_dependencies(unittest_helpers
   tbuild/cpfs/client/cpfs_fso_test_parse
   tbuild/cpfs/main/server_main_test_parse)
 
+enable_testing()
+add_test(cpfs_unittest cpfs_unittest)
+add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND} `printenv CTEST_OPTS`)
+add_dependencies(check cpfs_unittest unittest_helpers)
+
 # Installation
 install(TARGETS cpfs_server cpfs_client cpfs_cli cpfs_keygen
   RUNTIME DESTINATION sbin)

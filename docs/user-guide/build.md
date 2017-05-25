@@ -39,8 +39,9 @@ Once you have a shell within docker, you can do the following:
 
     [builder@12345678] mkdir /tmp/cpfs; cd /tmp/cpfs
     [builder@12345678] cmake ~
-    [builder@12345678] make -j3 cpfs_unittest unittest_helpers
-    [builder@12345678] ./cpfs_unittest
+    [builder@12345678] make -j3 check
+
+(Add `CTEST_OPTS="-V"` to the "make" command see test output.)
 
 ## Not using Docker ##
 
