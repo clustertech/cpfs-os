@@ -3,3 +3,4 @@
 DS_PORT=5000
 LOG_LEVEL=5
 LOG_PATH=/var/log/cpfs-data.log
+DS_EXTRA_ARGS=()

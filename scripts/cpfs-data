@@ -44,7 +44,8 @@ start_setup_args() {
           --ds-host="${DS_HOST:-${local_ip}}" --ds-port="${DS_PORT}"
           --log-level="${LOG_LEVEL:-5}"
           --log-path="${LOG_PATH:-/var/log/cpfs-data.log}"
-          --daemonize=true --pidfile="${PIDFILE}")
+          --daemonize=true --pidfile="${PIDFILE}"
+          "${DS_EXTRA_ARGS[@]}")
 }
 
 log_msg() {

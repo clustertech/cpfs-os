@@ -3,3 +3,4 @@
 LOG_LEVEL=5
 LOG_PATH=/var/log/cpfs-meta.log
 MS_PERMS=0
+MS_EXTRA_ARGS=()
