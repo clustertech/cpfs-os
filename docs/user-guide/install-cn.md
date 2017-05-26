@@ -166,6 +166,13 @@ FUSE 的 `default_permissions` 选项提供权限检查，MS 不作检查。你�
   * 如果扩充属性未被禁用，MS-based 的模式支援 POSIX 访问控制列表（ACL）。
     由于 FUSE 未能支援 ACL，在 FC-based 的模式下，ACL 的设定会被忽略。
 
+请注意，您还应适当地设置客户端以选择权限模型。
+
+    MS_EXTRA_ARGS=()
+
+传递给元数据服务器的额外参数。 有效的参数可用 `cpfs_server --help` 找
+到。
+
 在 `cpfs-data` 中：
 
     DATA_DIR=/var/lib/cpfs
@@ -181,6 +188,10 @@ FUSE 的 `default_permissions` 选项提供权限检查，MS 不作检查。你�
 MS 的本地 IP 地址，`DS_PORT` 的默认值是 6000。你须要确保所用的端口号不
 被防火墙阻挡（可参考 MS 的指示）。如果你想所有 DS 使用同一个配置文件，
 `DS_HOST` 设置应留空。
+
+    DS_EXTRA_ARGS=()
+
+传递给数据服务器的额外参数。 有效的参数可用 `cpfs_server --help` 找到。
 
 ## 设定身份验证密钥 ##
 
@@ -246,6 +257,21 @@ list）。如果你不使用这功能，想避免性能开销，可以加入以�
 就准备就绪，可以接受文件数据存取。同样的 `config` 管理客户端命令也可以
 用来移除 DS 组，注意，只有从来没有准备就绪的 DS 组才可以被移除。
 
+在某些环境下，CPFS 日志输出可能较多，时间久了会变得过大。在这种情况下，
+您可以使用 `logrotate` 定期旋转到一个新的日志文件并删除过旧的日志。例
+如，元数据服务器的日志可以使用以下 `logrotate` 配置进行管理：
+
+    /var/log/cpfs-meta.log {
+        rotate 5
+        weekly
+        postrotate
+            /bin/kill -HUP `cat /var/run/cpfs-meta.pid`
+        endscript
+    }
+
+管理客户端的日志，配置中的命令可使用 `/usr/bin/pgrep -f
+'/usr/local/sbin/cpfs_client.* <mount-point>'`。
+
 # 管理 #
 
 ## 用多个 DS 组存放同一个文件 ##
@@ -291,6 +317,9 @@ CPFS 提供了一个命令行管理客户端 `cpfs_cli` ，用于 CPFS 的监控
 FUSE 的调试模式：
 
     $ sudo mount -t cpfs ... -o log-path=<log path> -o -d
+
+除此之外，你也可以发送 SIGUSR2 信号到 CPFS 服务器或 mount 客户端程序，
+以在日志显示一些资讯，如正在等待处理的信息和最近收到的请求。
 
 # 关闭 CPFS #
 

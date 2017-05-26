@@ -209,6 +209,14 @@ checking to the MS instead.  The differences include:
     are not disabled.  FC-based permission model ignores ACLs set,
     because FUSE does not support it.
 
+Note that you should also setup the client appropriately to select one
+of the permission models.
+
+    MS_EXTRA_ARGS=()
+
+Extra arguments to pass to the metadata server.  Valid arguments can
+be found with `cpfs_server --help`.
+
 In `cpfs-data`:
 
     DATA_DIR=/var/lib/cpfs
@@ -227,6 +235,11 @@ MS, and the default `DS_PORT` is 6000.  You must ensure that the port
 used is not blocked by firewalls (see the description in MS for
 instructions).  If you use the same file for all DSs, the `DS_HOST`
 setting should be left unset.
+
+    DS_EXTRA_ARGS=()
+
+Extra arguments to pass to the data server.  Valid arguments can be
+found with `cpfs_server --help`.
 
 ## Authentication Key Setup ##
 
@@ -302,6 +315,26 @@ ready, and new files may be kept using the new DS group.  The same
 `config` admin client command can be used to remove a DS group, but
 only if the group has never become ready.
 
+## Logrotate setup ##
+
+Under certain environment, CPFS can generate log of moderate size, and
+over time this can become too bulky to handle.  In such cases, you may
+use `logrotate` to periodically rotate to a new log file and remove
+very old ones.  For example, the log of the metadata servers can be
+managed using the following logrotate configuration:
+
+    /var/log/cpfs-meta.log {
+        rotate 5
+        weekly
+        postrotate
+            /bin/kill -HUP `cat /var/run/cpfs-meta.pid`
+        endscript
+    }
+
+For the client, the command `/usr/bin/pgrep -f
+'/usr/local/sbin/cpfs_client.*<mount-point>'` may be used in the
+configuration instead.
+
 # Administration #
 
 ## Using multiple DSG for files ##
@@ -331,7 +364,7 @@ monitoring and management.  The following commands are supported:
     `num_ds_groups` setting may be modified.
   * `system shutdown`: cause the whole CPFS system to halt.
 
-To start the `cpfs_cli`, use:
+To start `cpfs_cli`, use:
 
     $ sudo cpfs_cli --meta-server=<ip:port of MS1>[,ip:port of M2] [command]
 
@@ -353,6 +386,11 @@ environment.  For FCs, you may enable FUSE debugging by passing `-o
 -d` as the parameters to `mount`:
 
     $ sudo mount -t cpfs ... -o log-path=<log path> -o -d
+
+Apart from that, the `SIGUSR2` signal can be sent to the CPFS server
+or mount client program to show in log files some information about
+the messages that are awaiting processing, and the recent requests
+received.
 
 # Shutdown #
 
