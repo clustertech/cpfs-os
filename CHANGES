@@ -1,0 +1,11 @@
+cpfs-os 1.2.1 (June 2017)
+=============
+
+* First open-source release.
+* Slightly modified from internal version.
+* Non-interactive mode for cpfs_cli.
+* New init scripts for server and client.
+* New building system.
+* Packaging for Redhat-based and Debian-based distributions.
+* Dockerfiles for creating build environment.
+* Updated documentation.
