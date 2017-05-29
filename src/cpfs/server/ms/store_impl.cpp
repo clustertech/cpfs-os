@@ -274,7 +274,6 @@ class Store : public IStore {
       close(fd);
   }
 
-  // TODO(Joseph): WIP for #13801
   std::string GetRoot(const std::string& bucket = "000") {
     return data_path_ + "/" + bucket;
   }
@@ -447,7 +446,6 @@ bool Store::IsInitialized() {
   struct stat buf;
   if (stat(data_path_.c_str(), &buf) == -1)
     return false;
-  // TODO(Joseph): WIP for #13801
   if (stat((GetRoot() + "/" + GetInodeStr(1)).c_str(), &buf) == -1)
     return false;
   if (!S_ISDIR(buf.st_mode))
@@ -457,14 +455,12 @@ bool Store::IsInitialized() {
 
 void Store::Initialize() {
   CreateEmptyDirectory(data_path_);
-  // TODO(Joseph): WIP for #13801
   for (unsigned d_idx = 0; d_idx < kNumBaseDir; ++d_idx) {
     char buf[4];
     std::snprintf(buf, sizeof(buf), "%03x", d_idx);
     CreateEmptyDirectory(data_path_ + "/" + std::string(buf));
   }
   std::string inode_str = GetInodeStr(1);
-  // TODO(Joseph): WIP for #13801
   std::string root_inode_path = GetRoot() + "/" + inode_str;
   CreateEmptyDirectory(root_inode_path);
   CreateEmptyFile(root_inode_path + "x");

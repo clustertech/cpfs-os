@@ -38,7 +38,6 @@ class InodeSrcTest : public ::testing::Test {
       : data_path_mgr_(kDataPath),
         data_path_(data_path_mgr_.GetPath()),
         inode_src_(MakeInodeSrc(data_path_)) {
-    // TODO(Joseph): WIP for #13801
     for (unsigned d_idx = 0; d_idx < kNumBaseDir; ++d_idx) {
       char buf[4];
       std::snprintf(buf, sizeof(buf), "%03x", d_idx);
@@ -54,7 +53,6 @@ class InodeSrcTest : public ::testing::Test {
     unlink((GetRoot() + "/" + GetInodeStr(inode)).c_str());
   }
 
-  // TODO(Joseph): WIP for #13801
   std::string GetRoot() {
     return std::string(data_path_) + "/000";
   }
@@ -91,7 +89,6 @@ TEST_F(InodeSrcTest, API) {
   to_set.push_back(10U);
   inode_src_->SetLastUsed(to_set);
   EXPECT_EQ(10U, inode_src_->GetLastUsed()[0]);
-  // TODO(Joseph): WIP for #13801. Dummy test at this moment
   inode_src_->Allocate(1, false);
 }
 

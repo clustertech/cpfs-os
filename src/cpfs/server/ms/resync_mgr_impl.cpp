@@ -246,7 +246,6 @@ class ResyncMgr : public IResyncMgr {
       if (resynced.find(peer_removed[i]) != resynced.end())
         continue;
       std::string inode_str = GetPrefixedInodeStr(peer_removed[i]);
-      // TODO(Joseph): WIP for #13801
       std::string inode_path = data_path + "/" + inode_str;
       // Inodes removed by stand-by might have been removed in active also
       struct stat stbuf;

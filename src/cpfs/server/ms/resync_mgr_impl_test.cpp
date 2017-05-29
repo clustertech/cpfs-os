@@ -117,7 +117,6 @@ class ResyncMgrTest : public ::testing::Test {
     // Mock for AddTransientRequest()
     EXPECT_CALL(*tracker_mapper_, GetMSTracker())
         .WillRepeatedly(Return(ms_tracker_));
-    // TODO(Joseph): WIP for #13801
     mkdir((std::string(data_path_) + "/000").c_str(), 0777);
   }
 

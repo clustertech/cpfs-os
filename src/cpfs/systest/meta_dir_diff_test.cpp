@@ -30,12 +30,10 @@ class MetaDataTest : public ::testing::Test {
   MetaDataTest()
       : data_path_mgr_("/tmp/meta_data_test_XXXXXX"),
         data_path_(data_path_mgr_.GetPath()) {
-    // TODO(Joseph): WIP for #13801
     mkdir(GetRoot().c_str(), 0777);
   }
 
   std::string GetRoot() {
-    // TODO(Joseph): WIP for #13801
     return std::string(data_path_) + "/000";
   }
 };
@@ -108,12 +106,10 @@ class MetaDirDiffTest : public ::testing::Test {
   MetaDirDiffTest()
       : data_path_mgr_("/tmp/meta_dir_diff_test_XXXXXX"),
         data_path_(data_path_mgr_.GetPath()) {
-    // TODO(Joseph): WIP for #13801
     mkdir(GetRoot().c_str(), 0777);
   }
 
   std::string GetRoot() {
-    // TODO(Joseph): WIP for #13801
     return std::string(data_path_) + "/000";
   }
 };

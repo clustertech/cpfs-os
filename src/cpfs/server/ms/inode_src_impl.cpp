@@ -96,7 +96,6 @@ class BaseInodeSrc {
    * SetupAllocation() call.
    */
   InodeNum Allocate() {
-    // TODO(Joseph): #13801, consider where inodes in range are used up
     return next_alloc_.fetch_add(1, boost::memory_order_seq_cst);
   }
 
@@ -127,7 +126,6 @@ class BaseInodeSrc {
   InodeNum last_used_; /**< Last used inodes */
   InodeNum last_persisted_; /**< Last inode_used_ count persisted */
 
-  // TODO(Joseph): WIP for #13801
   std::string GetRoot() {
     return std::string(data_path_);
   }

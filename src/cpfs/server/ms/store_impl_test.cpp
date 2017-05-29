@@ -105,13 +105,11 @@ class MSStoreTest : public ::testing::Test {
   }
 
   std::string EntryFilename(InodeNum parent, std::string filename) {
-    // TODO(Joseph): WIP for #13801
     return (boost::format("%s/000/%016x/%s") % data_path_ % parent % filename)
         .str();
   }
 
   std::string InodeFilename(InodeNum inode) {
-    // TODO(Joseph): WIP for #13801
     return (boost::format("%s/000/%016x") % data_path_ % inode).str();
   }
 
@@ -233,7 +231,6 @@ TEST_F(MSStoreTest, Init2) {
     EXPECT_THROW(store2->Initialize(), std::runtime_error);
   }
   // Similar, but for the case creating root directory
-  // TODO(Joseph): WIP for #13801
   fpath = (boost::format("%s/000/0000000000000001") % data_path_).str();
   system(("rm -rf " + fpath).c_str());
   system(("touch " + fpath).c_str());
@@ -1964,7 +1961,6 @@ TEST_F(MSStoreTest, RemoveInodeSinceError) {
   CreateFile(1, 3, "testf");
   CreateDirectory(1, 4, "testd1");
   // No permission to write the data directory
-  // TODO(Joseph): WIP for #13801
   chmod((std::string(data_path_) + "/000").c_str(), 0544);
   EXPECT_CALL(*inode_removal_tracker_, RecordRemoved(1));
   EXPECT_CALL(*inode_removal_tracker_, RecordRemoved(3));

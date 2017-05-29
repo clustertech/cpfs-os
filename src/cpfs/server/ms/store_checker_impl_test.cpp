@@ -82,13 +82,11 @@ class MSStoreCheckerTest : public ::testing::Test {
   }
 
   std::string EntryFilename(InodeNum parent, std::string filename) {
-    // TODO(Joseph): WIP for #13801
     return (boost::format("%s/000/%016x/%s") % data_path_ % parent % filename)
         .str();
   }
 
   std::string InodeFilename(InodeNum inode) {
-    // TODO(Joseph): WIP for #13801
     return (boost::format("%s/000/%016x") % data_path_ % inode).str();
   }
 };
@@ -102,7 +100,6 @@ TEST_F(MSStoreCheckerTest, Empty) {
   MockIConsole* console;
   checker_.reset(MakeStoreChecker(data_path_, console = new MockIConsole()));
   EXPECT_TRUE(checker_->Run(false));
-  // TODO(Joseph): WIP for #13801
   EXPECT_EQ(std::string(data_path_), checker_->GetRoot());
   EXPECT_EQ(InodeFilename(1), checker_->GetInodePath(1));
   EXPECT_EQ(EntryFilename(1, "hello"),

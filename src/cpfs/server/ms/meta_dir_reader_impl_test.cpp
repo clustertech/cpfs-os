@@ -52,7 +52,6 @@ class MetaDirReaderTest : public ::testing::Test {
       : data_path_mgr_(kDataPath),
         data_path_(data_path_mgr_.GetPath()),
         meta_dir_reader_(MakeMetaDirReader(data_path_)) {
-    // TODO(Joseph): WIP for #13801
     mkdir(GetRoot().c_str(), 0777);
   }
 
@@ -70,7 +69,6 @@ class MetaDirReaderTest : public ::testing::Test {
       lsetxattr((path + "x").c_str(), "user.sg", sg, strlen(sg), 0);
   }
 
-  // TODO(Joseph): WIP for #13801
   std::string GetRoot() {
     return std::string(data_path_) + "/000";
   }
