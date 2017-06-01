@@ -12,16 +12,16 @@ multiple of 5 data servers (compile time constant for now).  Meta-data
 servers store directory data and replicate them like a RAID-1 disk
 array.  Data servers store file data and replicate them like a RAID-5
 disk array.  The server data is accessed via FUSE-based clients.
-Node-local cache provided by FUSE is used, with cache coherence
-implemented.  Meta-data is fully consistent.  Close-to-open
-consistence is implemented for data.
+Node-local cache provided by FUSE is used, with cache coherency
+implemented.  Meta-data is fully coherent.  Close-to-open coherency is
+implemented for data.
 
-Failover after a server crashes is immediate, while data resync upon
-server recovery is automatic.  At present the system is not responsive
-during the resync process.  (We are now trying to allow the resync to
-be partially online.)  Unlike an actual disk array, the replication is
-file-level, allowing fast system recovery if the amount of data to
-resync is not large.
+The software supports automatic failover and data resynchronization
+upon server crash and recovery.  At present, the system is not
+responsive during resynchronization.  (We are now trying to modify the
+software to allow partially online resynchronization.)  Unlike an
+actual disk array, the replication is file-level, allowing fast system
+recovery if the amount of data to resync is not large.
 
 The project is hosted in
 [GitHub](https://github.com/cpfs-clustertech/cpfs-os).  In its
