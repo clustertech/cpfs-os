@@ -90,13 +90,13 @@ bool LoadClientOpts(int argc, char* argv[], cpfs::AdminConfigItems* configs) {
   if (vm.count("meta-server")) {
     meta_server = vm["meta-server"].as<std::string>();
   } else {
-    const char cmd[] = ". /etc/default/cpfs-meta > /dev/null 2>&1 "
-                       "&& echo -n \"${METADATA_SERVER}\"";
+    const char cmd[] = "bash -c '. /etc/default/cpfs-meta > /dev/null "
+                       "&& echo -n \"${METADATA_SERVER}\"'";
     FILE* cmd_f = popen(cmd, "r");
     if (cmd_f) {
       char output[4096];
-      if (fgets(output, sizeof(output), cmd_f) && feof(cmd_f))
-        meta_server = std::string(output);
+      while (fgets(output, sizeof(output), cmd_f))
+        meta_server += std::string(output);
       pclose(cmd_f);
     }
     if (meta_server.empty()) {
