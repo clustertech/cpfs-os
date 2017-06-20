@@ -153,13 +153,10 @@ inline std::size_t CgStart(std::size_t off) {
 const double kDefaultHeartbeatInterval = 9.0;
 
 /** The idle timeout of the socket read stream to delcare connection drops */
-const double kDefaultSocketReadTimeout = 30.0;
+const double kDefaultSocketReadTimeout = 28.0;
 
 /** The max retry count for initial connection */
 const unsigned kDefaultInitConnRetry = 3;
-
-/** The maximum timeout for failover reconfirmation */
-const double kReconfirmTimeout = 20.0;
 
 /** Number of segments in degraded cache, in units of kSegmentSize
  * bytes */

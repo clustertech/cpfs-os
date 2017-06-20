@@ -204,7 +204,8 @@ class ConnMgr : public IConnMgr {
     server_->inode_removal_tracker()->SetPersistRemoved(true);
     server_->durable_range()->SetConservative(true);
     if (server_->state_mgr()->GetState() == kStateStandby)
-      server_->failover_mgr()->Start(kReconfirmTimeout);
+      server_->failover_mgr()->Start(
+          1 + server_->configs().heartbeat_interval());
     // Reconnect
     if (server_->configs().role() == "MS2")
       ScheduleReconnMS();

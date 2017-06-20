@@ -10,8 +10,10 @@
 #include "server/ms/failover_mgr_impl.hpp"
 
 #include <stdexcept>
+#include <string>
 #include <vector>
 
+#include <boost/algorithm/string.hpp>
 #include <boost/bind.hpp>
 #include <boost/format.hpp>
 #include <boost/function.hpp>
@@ -155,9 +157,19 @@ class FailoverMgr : public IFailoverMgr {
     if (!failover_pending_)
       return;
     std::vector<ClientNum> fcs = server_->topology_mgr()->GetFCs();
+    std::vector<ClientNum> waiting;
     for (unsigned i = 0; i < fcs.size(); ++i)
       if (done_fcs_.find(fcs[i]) == done_fcs_.end())
-        return;
+        waiting.push_back(i);
+    if (!waiting.empty()) {
+      std::vector<std::string> w_str;
+      for (unsigned i = 0; i < waiting.size(); ++i)
+        w_str.push_back((boost::format("%s") % waiting[i]).str());
+      std::string msg = boost::algorithm::join(w_str, ", ");
+      LOG(informational, Server,
+          "Not switching to active: Still waiting for FCs [", msg.c_str(), "]");
+      return;
+    }
     SwitchActive_();
   }
 
