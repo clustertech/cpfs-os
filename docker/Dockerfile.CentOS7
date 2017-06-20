@@ -25,11 +25,14 @@ USER builder
 RUN cd && \
     ./build_dep
 RUN cd && \
-    mkdir build && \
-    cd build && \
-    cmake -DCMAKE_BUILD_TYPE=Release .. && \
-    make -j 6 -l 4 && \
-    make DESTDIR=install install && \
-    make package && \
-    mkdir package && \
-    mv cpfs-os* package
+    tar czf /tmp/cpfs-os.tar.gz * && \
+    mkdir -p rpmbuild/{SPECS,SOURCES} && \
+    mv /tmp/cpfs-os.tar.gz rpmbuild/SOURCES && \
+    verstr=$(tr -d \" < src/cpfs/version.ipp) && \
+    VERSION=${verstr//-/_} DESCRIPTION=$(cat README.md) \
+      rpm/cpfs-os.spec.sh > rpmbuild/SPECS/cpfs-os.spec && \
+    rpmbuild -bb --noclean rpmbuild/SPECS/cpfs-os.spec && \
+    mkdir -p build/{package,install} && \
+    cp -r rpmbuild/BUILDROOT/cpfs-os*/. build/install/ && \
+    cp rpmbuild/RPMS/x86_64/* build/package && \
+    rm -rf build/install/usr/lib/debug/.build-id

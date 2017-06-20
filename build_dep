@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+SCRIPTDIR=$(readlink -f $(dirname "${BASH_SOURCE[0]}"))
 SRCDIR=ext-src
 STLSOFT_SRC=https://codeload.github.com/synesissoftware/STLSoft-1.9/zip/STLSoft-1.9.131
 PANTHEIOS_SRC=https://nchc.dl.sourceforge.net/project/pantheios/Pantheios%20%28C%20and%20Cxx%29/1.0.1%20%28beta%20216%29/pantheios-1.0.1-beta216.zip
@@ -28,13 +29,13 @@ rm -rf ${STLSOFT_NAME}
 
 unzip ${SRCDIR}/${PANTHEIOS_ARC}
 pushd ${PANTHEIOS_NAME}
-patch -p1 < ../pantheios/pantheios-1.0.1-file-mode.patch
+patch -p1 < "${SCRIPTDIR}"/pantheios/pantheios-1.0.1-file-mode.patch
 VER=$(gcc -dumpversion | sed -e 's/\.\([^.]*\)\..*/\1/')
 if [[ ${VER} -gt 47 ]]; then
     VER=47
 fi
 cd "build/gcc${VER}.unix.file64bit"
-make CPPC_F_WARNING_ERR= CC_F_WARNING_ERR= build.libs
+make CPPC_F_ADDITIONAL=-fPIC CC_F_ADDITIONAL=-fPIC CPPC_F_WARNING_ERR= CC_F_WARNING_ERR= build.libs
 popd
 cp -r ${PANTHEIOS_NAME}/include/. include
 cp -r ${PANTHEIOS_NAME}/lib/. lib

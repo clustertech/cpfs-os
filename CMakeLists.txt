@@ -10,6 +10,9 @@ if(DEP_PREFIX)
   set(ENV{LIB} ${DEP_PREFIX}/lib:$ENV{LIB})
   include_directories(${DEP_PREFIX}/include)
   link_directories(${DEP_PREFIX}/lib)
+  include_directories(SYSTEM include ${DEP_PREFIX}/include/botan-1.10)
+else(DEP_PREFIX)
+  include_directories(SYSTEM include /usr/include/botan-1.10)
 endif(DEP_PREFIX)
 
 if(LINK_STATIC)
@@ -28,7 +31,7 @@ else(LINK_STATIC)
 endif(LINK_STATIC)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include defs.hpp ${FUSE_CFLAGS_OTHER}")
-include_directories(SYSTEM include /usr/include/botan-1.10 ${FUSE_INCLUDE_DIRS})
+include_directories(SYSTEM include ${FUSE_INCLUDE_DIRS})
 include_directories(src/cpfs)
 link_directories(lib /usr/local/lib)
 
@@ -59,7 +62,7 @@ file(GLOB_RECURSE SOURCES_MAIN "src/cpfs/main/*.cpp")
 list(REMOVE_ITEM SOURCES ${SOURCES_TEST})
 list(REMOVE_ITEM SOURCES ${SOURCES_TEST_EXTRA})
 list(REMOVE_ITEM SOURCES ${SOURCES_MAIN})
-add_library(cpfs_lib ${SOURCES})
+add_library(cpfs_lib STATIC ${SOURCES})
 
 # Main executables
 add_executable(cpfs_keygen src/cpfs/main/cpfs_keygen.cpp)
@@ -183,19 +186,6 @@ if(IS_DEB EQUAL 0)
   set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
     "${CMAKE_CURRENT_SOURCE_DIR}/debian/conffiles"
     "${CMAKE_CURRENT_SOURCE_DIR}/debian/postinst"
-    "${CMAKE_CURRENT_SOURCE_DIR}/debian/postrm")
-else(IS_DEB EQUAL 0)
-  set(CPACK_GENERATOR "RPM")
-  set(CPACK_RPM_PACKAGE_RELEASE 1)
-  set(CPACK_RPM_PACKAGE_LICENSE "AGPL 3")
-  set(CPACK_RPM_PACKAGE_REQUIRES "fuse, redhat-lsb-core")
-  set(CPACK_RPM_USER_FILELIST
-    "%config(noreplace) /etc/default/cpfs-meta"
-    "%config(noreplace) /etc/default/cpfs-data")
-  set(CPACK_RPM_EXCLUDE_FROM_AUTO_FILELIST_ADDITION "/sbin")
-  set(CPACK_RPM_POST_INSTALL_SCRIPT_FILE
-    "${CMAKE_CURRENT_SOURCE_DIR}/debian/postinst")
-  set(CPACK_RPM_POST_UNINSTALL_SCRIPT_FILE
     "${CMAKE_CURRENT_SOURCE_DIR}/debian/postrm")
 endif(IS_DEB EQUAL 0)
 include(CPack)

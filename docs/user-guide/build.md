@@ -45,23 +45,24 @@ Once you have a shell within docker, you can do the following:
 
 ## Not using Docker ##
 
-You can also build CPFS-OS without Docker (this is likely more
-appropriate if you want to modify CPFS-OS).  Simply read the
-Dockerfile closest to your distribution (they are quite simple) and
-follow the commands.
+For development, you can also build CPFS-OS without Docker.  Simply
+read the Dockerfile closest to your distribution (they are quite
+simple) and follow the commands (as root), until the point where
+`/home/builder` is added.  At that point, you should have configured
+your system to have most of the software needed.  Ensure the user has
+permission to run `fusermount`, and the user can write to `/dev/fuse`.
+Then `cd` to the directory containing the CPFS source code, and run:
 
-If you run the unit tests as normal user, you need to ensure that the
-user has permission to run `fusermount`, and the user can access
-`/dev/fuse`.
+    $ ./build_dep
+    $ mkdir build
+    $ cd build
+    $ cmake -DCMAKE_BUILD_TYPE=Debug ..
+    $ make -j4 all cpfs_unittest unittest_helpers
+    $ ./cpfs_unittest
 
-If you build CPFS for development, it is likely that you want to
-create a debug build instead of a release build.  To do so, use
-`-DCMAKE_BUILD_TYPE=Debug` when running `cmake`, instead of the
-`-DCMAKE_BUILD_TYPE=Release` specified in the Dockerfile.
-
-Building CPFS-OS without root in CentOS 6 is slightly complex because
-we need to build our own Boost, Botan, and FUSE library.  Here are
-some hints:
+In CentOS 6, we are using our own Boost, Botan, and FUSE library.
+They are normally installed under `/usr/local`.  But if you want to
+use your own directory, here are some hints:
 
   * When configuring such libraries for building, you can use the
     `--prefix=<prefix>` argument to specify a location other than
