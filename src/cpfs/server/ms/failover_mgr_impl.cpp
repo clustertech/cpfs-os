@@ -137,6 +137,7 @@ class FailoverMgr : public IFailoverMgr {
         if (!server_->tracker_mapper()->GetFCFimSocket(fcs[i])) {
           LOG(notice, Server, "Failed to wait for FC ", PINT(fcs[i]),
               " to re-connect during failover. Timeout occurred");
+          done_fcs_.insert(fcs[i]);
           boost::reverse_lock<boost::unique_lock<MUTEX_TYPE> > unl(lock);
           boost::shared_ptr<IFimSocket> fake_sock =
               kFimSocketMaker(0, server_->asio_policy());
