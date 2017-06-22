@@ -270,7 +270,7 @@ list）。如果你不使用这功能，想避免性能开销，可以加入以�
     }
 
 管理客户端的日志，配置中的命令可使用 `/usr/bin/pgrep -f
-'/usr/local/sbin/cpfs_client.* <mount-point>'`。
+'^/usr/local/sbin/cpfs_client.* <mount-point>'`。
 
 # 管理 #
 

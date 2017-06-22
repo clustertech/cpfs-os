@@ -332,7 +332,7 @@ managed using the following logrotate configuration:
     }
 
 For the client, the command `/usr/bin/pgrep -f
-'/usr/local/sbin/cpfs_client.*<mount-point>'` may be used in the
+'^/usr/local/sbin/cpfs_client.*<mount-point>'` may be used in the
 configuration instead.
 
 # Administration #
