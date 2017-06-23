@@ -35,6 +35,7 @@ start_setup_args() {
         echo "Please specify DATA_DIR in ${CONFIG_PATH}" >&2
         exit 1
     fi
+    DATA_DIR=$(readlink -m ${DATA_DIR})
     if [[ -z ${DS_PORT} ]]; then
         echo "Please specify DS_PORT in ${CONFIG_PATH}" >&2
         exit 1
