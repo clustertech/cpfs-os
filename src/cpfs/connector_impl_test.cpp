@@ -89,15 +89,28 @@ TEST(ConnectorTest, Connect) {
                                       &handler1, _1),
                           true, 0.5);
 
+  FimSocketCleanupCallback cleanup_callback;
+  EXPECT_CALL(*fim_socket, OnCleanup(_))
+      .WillOnce(SaveArg<0>(&cleanup_callback));
   AuthHandler auth_handler;
   EXPECT_CALL(authenticator, AsyncAuth(_, _, _))
       .WillOnce(SaveArg<1>(&auth_handler));
   // Trigger connected
   connected_cb(0);
 
+  EXPECT_CALL(*fim_socket, OnCleanup(_));
   EXPECT_CALL(*fim_socket, SetFimProcessor(proc.get()));
   // Trigger authenticated
   auth_handler();
+
+  // Trigger cleanup
+  EXPECT_CALL(csm, Make(_, _, _)).WillOnce(DoAll(
+    SaveArg<2>(&connected_cb),
+    Return(conn_socket)));
+  EXPECT_CALL(*conn_socket, SetTimeout(0.5, _));
+  EXPECT_CALL(*conn_socket, AsyncConnect());
+
+  cleanup_callback();
 
   // Cleanup and check
   Mock::VerifyAndClear(&fsm);

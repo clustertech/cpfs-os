@@ -32,6 +32,26 @@ class IFimProcessor;
 namespace {
 
 /**
+ * Arguments needed for calling AsyncConnect
+ */
+struct ConnectArgs {
+  std::string host;
+  int port;
+  IFimProcessor* fim_processor;
+  FimSocketCreatedHandler callback;
+  bool monitor;
+  double timeout;
+  ConnectErrorHandler err_handler;
+  IAsioPolicy* asio_policy;
+  ConnectArgs(std::string host, int port, IFimProcessor* fim_processor,
+              FimSocketCreatedHandler callback, bool monitor, double timeout,
+              ConnectErrorHandler err_handler, IAsioPolicy* asio_policy) :
+      host(host), port(port), fim_processor(fim_processor), callback(callback),
+      monitor(monitor), timeout(timeout), err_handler(err_handler),
+      asio_policy(asio_policy) {}
+};
+
+/**
  * Connect to the target address, callbacks are called when connected
  * or FIM received.  Each callback has ptr to ConnectParam as the
  * first parameter. It will be kept alive as long as the FimSocket's
@@ -49,8 +69,8 @@ class Connector : public IConnector {
    *
    * @param monitor_accepted Whether accepted connections should use heartbeat
    */
-  explicit Connector(IAsioPolicy* asio_policy, IAuthenticator* authenticator,
-                     bool monitor_accepted)
+  Connector(IAsioPolicy* asio_policy, IAuthenticator* authenticator,
+            bool monitor_accepted)
       : asio_policy_(asio_policy),
         authenticator_(authenticator),
         monitor_accepted_(monitor_accepted),
@@ -64,12 +84,13 @@ class Connector : public IConnector {
     if (!asio_policy)
       asio_policy = asio_policy_;
     TcpEndpoint target_addr(boost::asio::ip::address::from_string(host), port);
+    ConnectArgs args(host, port, fim_processor, callback, monitor, timeout,
+                     err_handler, asio_policy);
     boost::shared_ptr<IConnectingSocket> connecting_sock =
         connecting_socket_maker_(
             asio_policy,
             target_addr,
-            boost::bind(&Connector::HandleConnected, this, _1,
-                        fim_processor, callback, monitor, asio_policy));
+            boost::bind(&Connector::HandleConnected, this, _1, args));
     if (timeout > 0)
       connecting_sock->SetTimeout(timeout, err_handler);
     connecting_sock->AsyncConnect();
@@ -119,22 +140,27 @@ class Connector : public IConnector {
    *
    * @param asio_policy The Asio policy to use
    */
-  void HandleConnected(TcpSocket* socket,
-                       IFimProcessor* fim_processor,
-                       FimSocketCreatedHandler callback, bool monitor,
-                       IAsioPolicy* asio_policy) {
+  void HandleConnected(TcpSocket* socket, ConnectArgs args) {
+    IAsioPolicy* asio_policy = args.asio_policy;
     boost::shared_ptr<IFimSocket> fim_socket =
         fim_socket_maker_(socket, asio_policy);
-    if (monitor) {
+    if (args.monitor) {
       fim_socket->SetHeartbeatTimer(
           kPeriodicTimerMaker(asio_policy->io_service(), heartbeat_interval_));
       fim_socket->SetIdleTimer(
-          kPeriodicTimerMaker(asio_policy->io_service(),
-                              socket_read_timeout_));
+          kPeriodicTimerMaker(asio_policy->io_service(), socket_read_timeout_));
     }
+    fim_socket->OnCleanup(
+        boost::bind(&Connector::AsyncConnectArgs, this, args));
     authenticator_->AsyncAuth(fim_socket, boost::bind(
         &Connector::AuthCompleted, this,
-        fim_socket, fim_processor, callback), true);
+        fim_socket, args.fim_processor, args.callback), true);
+  }
+
+  void AsyncConnectArgs(ConnectArgs args) {
+    AsyncConnect(args.host, args.port, args.fim_processor, args.callback,
+                 args.monitor, args.timeout, args.err_handler,
+                 args.asio_policy);
   }
 
   /**
@@ -171,6 +197,7 @@ class Connector : public IConnector {
   void AuthCompleted(boost::shared_ptr<IFimSocket> fim_socket,
                      IFimProcessor* fim_processor,
                      FimSocketCreatedHandler callback) {
+    fim_socket->OnCleanup(FimSocketCleanupCallback());
     if (fim_processor)
       fim_socket->SetFimProcessor(fim_processor);
     if (callback)
