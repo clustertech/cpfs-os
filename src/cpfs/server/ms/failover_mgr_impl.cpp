@@ -9,6 +9,7 @@
 
 #include "server/ms/failover_mgr_impl.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -86,6 +87,10 @@ class FailoverMgr : public IFailoverMgr {
       server_->shutdown_mgr()->Shutdown();  // Suicide
       return;
     }
+    std::vector<ClientNum> fcs = server_->topology_mgr()->GetFCs();
+    waiting_fcs_.clear();
+    for (unsigned i = 0; i < fcs.size(); ++i)
+      waiting_fcs_.insert(fcs[i]);
     LOG(notice, Server, "Failover started");
     server_->ha_counter()->SetActive();
     // Stop time keeper until peer is restarted and resync completed
@@ -103,7 +108,7 @@ class FailoverMgr : public IFailoverMgr {
       throw std::logic_error((boost::format(
           "Unexpected reconfirm completion from FC %d during failover")
            % client_num).str());
-    done_fcs_.insert(client_num);
+    waiting_fcs_.erase(client_num);
     TrySwitchActive_();
   }
 
@@ -114,7 +119,7 @@ class FailoverMgr : public IFailoverMgr {
   boost::shared_ptr<IPeriodicTimer> timer_; /**< Check for completion */
   bool failover_pending_; /**< Whether a failover is in progress */
   bool cleanup_pending_; /**< Whether a cleanup is needed */
-  boost::unordered_set<ClientNum> done_fcs_; /**< FCs finished resending */
+  boost::unordered_set<ClientNum> waiting_fcs_; /**< FCs requring waiting */
 
   bool Timeout() {
     MUTEX_LOCK(boost::unique_lock, data_mutex_, lock);
@@ -137,7 +142,7 @@ class FailoverMgr : public IFailoverMgr {
         if (!server_->tracker_mapper()->GetFCFimSocket(fcs[i])) {
           LOG(notice, Server, "Failed to wait for FC ", PINT(fcs[i]),
               " to re-connect during failover. Timeout occurred");
-          done_fcs_.insert(fcs[i]);
+          waiting_fcs_.erase(fcs[i]);
           boost::reverse_lock<boost::unique_lock<MUTEX_TYPE> > unl(lock);
           boost::shared_ptr<IFimSocket> fake_sock =
               kFimSocketMaker(0, server_->asio_policy());
@@ -158,13 +163,15 @@ class FailoverMgr : public IFailoverMgr {
     if (!failover_pending_)
       return;
     std::vector<ClientNum> fcs = server_->topology_mgr()->GetFCs();
-    std::vector<ClientNum> waiting;
-    for (unsigned i = 0; i < fcs.size(); ++i)
-      if (done_fcs_.find(fcs[i]) == done_fcs_.end())
-        waiting.push_back(i);
-    if (!waiting.empty()) {
+    if (!waiting_fcs_.empty()) {
       std::vector<std::string> w_str;
-      for (unsigned i = 0; i < waiting.size(); ++i)
+      std::vector<ClientNum> waiting;
+      for (boost::unordered_set<ClientNum>::iterator it = waiting_fcs_.begin();
+           it != waiting_fcs_.end();
+           ++it)
+        waiting.push_back(*it);
+      std::sort(waiting.begin(), waiting.end());
+      for (unsigned i = 0; i < waiting_fcs_.size(); ++i)
         w_str.push_back((boost::format("%s") % waiting[i]).str());
       std::string msg = boost::algorithm::join(w_str, ", ");
       LOG(informational, Server,
@@ -199,7 +206,6 @@ class FailoverMgr : public IFailoverMgr {
         socket->SetFimProcessor(server_->fc_fim_processor());
         socket->WriteMsg(reply);
       }
-    done_fcs_.clear();
     failover_pending_ = false;
     server_->PrepareActivate();
   }

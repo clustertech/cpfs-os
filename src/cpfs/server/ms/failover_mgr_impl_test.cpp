@@ -130,10 +130,6 @@ TEST_F(FailoverMgrTest, TimeoutOnce) {
       .WillOnce(SaveArg<0>(&callback));
   EXPECT_CALL(*topology_mgr_, GetNumFCs())
       .WillRepeatedly(Return(3));
-
-  failover_mgr_->Start(40);
-
-  // First confirmed
   std::vector<ClientNum> clients;
   clients.push_back(1);
   clients.push_back(2);
@@ -141,6 +137,9 @@ TEST_F(FailoverMgrTest, TimeoutOnce) {
   EXPECT_CALL(*topology_mgr_, GetFCs())
       .WillRepeatedly(Return(clients));
 
+  failover_mgr_->Start(40);
+
+  // First confirmed
   failover_mgr_->AddReconfirmDone(1);
 
   // Timeout, Reset all DS tracker as non-expecting, cleanup missing sockets
