@@ -262,7 +262,8 @@ class Authenticator
           break;
         boost::shared_ptr<IFimSocket> socket = itr->first;
         LOG(warning, Fim,
-            "Unauthorized connection ", socket->remote_info(), " is dropped");
+            "Timeout expired for ", socket->remote_info(),
+            " authentication dialog, connection dropped");
         sockets.push_back(socket);
         itr = auth_.erase(itr);
       }
