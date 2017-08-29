@@ -1,7 +1,7 @@
 # ClusterTech Parallel Filesystem
 
 This is open-source version of CPFS, the
-[ClusterTech](http://www.clustertech.com) Parallel File System.  CPFS
+[ClusterTech](https://www.clustertech.com) Parallel File System.  CPFS
 is a high-performance distributed parallel filesystem which is fault
 tolerant while being very easy to set up.  The interface is highly
 POSIX compliant, so most applications do not need to be rewritten to
