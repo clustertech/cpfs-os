@@ -35,14 +35,41 @@ namespace {
  * Arguments needed for calling AsyncConnect
  */
 struct ConnectArgs {
-  std::string host;
-  int port;
+  std::string host;  /**< The host to connect to */
+  int port;  /**< The port to connect to */
+  /**
+   * The FIM processor used to process FIMs of
+   * the resulting connection
+   */
   IFimProcessor* fim_processor;
+  /**
+   * The callback to call once a connection is made
+   */
   FimSocketCreatedHandler callback;
-  bool monitor;
-  double timeout;
-  ConnectErrorHandler err_handler;
-  IAsioPolicy* asio_policy;
+  bool monitor;  /**< Whether the connection needs to be monitored */
+  double timeout;  /**< The number of seconds to wait for connection */
+  ConnectErrorHandler err_handler;  /**< What to do upon error */
+  IAsioPolicy* asio_policy;  /**< The asio policy to use */
+  /**
+   * Constructor
+   *
+   * @param host The host to connect to
+   *
+   * @param port The port to connect to
+   *
+   * @param fim_processor The FIM processor used to process FIMs of
+   * the resulting connection
+   *
+   * @param callback The callback to call once a connection is made
+   *
+   * @param monitor Whether the connection needs to be monitored
+   *
+   * @param timeout The number of seconds to wait for connection
+   *
+   * @param err_handler What to do upon error
+   *
+   * @param asio_policy The asio policy to use
+   */
   ConnectArgs(std::string host, int port, IFimProcessor* fim_processor,
               FimSocketCreatedHandler callback, bool monitor, double timeout,
               ConnectErrorHandler err_handler, IAsioPolicy* asio_policy) :
@@ -132,13 +159,7 @@ class Connector : public IConnector {
    *
    * @param socket The socket used
    *
-   * @param fim_processor How to handle FIM received
-   *
-   * @param monitor Whether to use heartbeat on this connection
-   *
-   * @param callback Callback when connected
-   *
-   * @param asio_policy The Asio policy to use
+   * @param args Options of connection
    */
   void HandleConnected(TcpSocket* socket, ConnectArgs args) {
     IAsioPolicy* asio_policy = args.asio_policy;
@@ -155,12 +176,6 @@ class Connector : public IConnector {
     authenticator_->AsyncAuth(fim_socket, boost::bind(
         &Connector::AuthCompleted, this,
         fim_socket, args.fim_processor, args.callback), true);
-  }
-
-  void AsyncConnectArgs(ConnectArgs args) {
-    AsyncConnect(args.host, args.port, args.fim_processor, args.callback,
-                 args.monitor, args.timeout, args.err_handler,
-                 args.asio_policy);
   }
 
   /**
@@ -228,6 +243,12 @@ class Connector : public IConnector {
   FimSocketMaker fim_socket_maker_; /**< How to create FimSocket's */
   double heartbeat_interval_;
   double socket_read_timeout_;
+
+  void AsyncConnectArgs(ConnectArgs args) {
+    AsyncConnect(args.host, args.port, args.fim_processor, args.callback,
+                 args.monitor, args.timeout, args.err_handler,
+                 args.asio_policy);
+  }
 };
 
 }  // namespace
