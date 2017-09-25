@@ -155,6 +155,9 @@ const double kDefaultHeartbeatInterval = 9.0;
 /** The idle timeout of the socket read stream to delcare connection drops */
 const double kDefaultSocketReadTimeout = 28.0;
 
+/** The number of inodes to sync in each DS sync phase */
+const unsigned kDefaultDataSyncNumInodes = 32U;
+
 /** The max retry count for initial connection */
 const unsigned kDefaultInitConnRetry = 3;
 

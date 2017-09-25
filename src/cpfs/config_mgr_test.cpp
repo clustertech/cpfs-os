@@ -19,6 +19,8 @@ TEST_F(ConfigMgrTest, GetSetConfig) {
   EXPECT_EQ("5", cfg_.log_severity());
   cfg_.set_log_path("/dev/null");
   EXPECT_EQ("/dev/null", cfg_.log_path());
+  cfg_.set_data_sync_num_inodes(10);
+  EXPECT_EQ(10U, cfg_.data_sync_num_inodes());
 }
 
 }  // namespace

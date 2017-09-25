@@ -191,7 +191,11 @@ bool ParseOpts(int argc, char* argv[], ConfigMgr* configs) {
       ("socket-read-timeout",
        po::value<double>()->default_value(kDefaultSocketReadTimeout),
        (boost::format("The socket read timeout. Default: %.2f seconds")
-            % kDefaultSocketReadTimeout).str().c_str());
+            % kDefaultSocketReadTimeout).str().c_str())
+      ("data_sync_num_inodes",
+       po::value<unsigned>()->default_value(kDefaultDataSyncNumInodes),
+       (boost::format("The number of inodes to sync in each phase. Default: %u")
+            % kDefaultDataSyncNumInodes).str().c_str());
 
   po::store(po::parse_command_line(argc, argv, desc), vm);
   if (vm.count("help")) {

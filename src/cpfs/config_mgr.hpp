@@ -7,7 +7,6 @@
  *
  * Define ConfigMgr for central retrival and store of configs.
  */
-
 #include <string>
 #include <vector>
 
@@ -243,6 +242,23 @@ class ConfigMgr {
   }
 
   /**
+   * Set number of inodes to sync per data sync phase
+   *
+   * The number is used only in DS during resync, and only by the
+   * failed server when partitioning the set of inodes to sync.
+   */
+  void set_data_sync_num_inodes(unsigned data_sync_num_inodes) {
+    data_sync_num_inodes_ = data_sync_num_inodes;
+  }
+
+  /**
+   * Get number of inodes to sync per data sync phase
+   */
+  unsigned data_sync_num_inodes() {
+    return data_sync_num_inodes_;
+  }
+
+  /**
    * Get the list of runtime configurable config items
    */
   std::vector<ConfigItem> List() const {
@@ -255,7 +271,8 @@ class ConfigMgr {
   ConfigMgr() : ms1_port_(0), ms2_port_(0),
                 ds_port_(0), num_groups_(1),
                 ms_perms_(false), daemonize_(false),
-                heartbeat_interval_(0), socket_read_timeout_(0) {}
+                heartbeat_interval_(0), socket_read_timeout_(0),
+                data_sync_num_inodes_(32) {}
 
  private:
   SkipCopy<boost::mutex> data_mutex_; /**< Protect fields below */
@@ -275,6 +292,7 @@ class ConfigMgr {
   std::string pidfile_;
   double heartbeat_interval_;
   double socket_read_timeout_;
+  unsigned data_sync_num_inodes_;
 };
 
 }  // namespace cpfs
