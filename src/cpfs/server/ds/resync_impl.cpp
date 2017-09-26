@@ -135,7 +135,9 @@ class ResyncSender : public IResyncSender {
     ReadResyncList(target_tracker);
     std::sort(pending_inodes_.begin(), pending_inodes_.end());
     std::reverse(pending_inodes_.begin(), pending_inodes_.end());
-    LOG(notice, Degraded, "Sending data Fims for DS Resync");
+    LOG(notice, Degraded, "Sending data removal requests");
+    SendDataRemoval(target_tracker);
+    LOG(notice, Degraded, "Sending inode data");
     SendAllResync(target_tracker);
   }
 
@@ -226,6 +228,30 @@ class ResyncSender : public IResyncSender {
   }
 
   /**
+   * Send data removal requests.
+   *
+   * @param target_tracker The tracker used to send the requests
+   */
+  void SendDataRemoval(boost::shared_ptr<IReqTracker> target_tracker) {
+    boost::scoped_ptr<IShapedSender> shaped_sender(
+        s_sender_maker_(target_tracker, kMaxResyncFims));
+    uint64_t count = 0;
+    std::vector<InodeNum> removed =
+        server_->inode_removal_tracker()->GetRemovedInodes();
+    unsigned max_inodes = kSegmentSize / sizeof(InodeNum);
+    for (unsigned pos = 0; pos < removed.size(); pos += max_inodes) {
+      unsigned num_inodes = std::min(max_inodes,
+                                     unsigned(removed.size() - pos));
+      FIM_PTR<IFim> fim = DSResyncRemovalFim::MakePtr(
+          num_inodes * sizeof(InodeNum));
+      std::memcpy(fim->tail_buf(), removed.data() + pos,
+                  num_inodes * sizeof(InodeNum));
+      SendResyncFim(shaped_sender, fim, &count);
+    }
+    shaped_sender->WaitAllReplied();
+  }
+
+  /**
    * Send all resync requests to resync a replacement DS.
    *
    * @param target_tracker The tracker used to send the requests
@@ -233,22 +259,7 @@ class ResyncSender : public IResyncSender {
   void SendAllResync(boost::shared_ptr<IReqTracker> target_tracker) {
     boost::scoped_ptr<IShapedSender> shaped_sender(
         s_sender_maker_(target_tracker, kMaxResyncFims));
-    LOG(informational, Degraded, "Sending inode list");
     uint64_t count = 0;
-    {
-      std::vector<InodeNum> removed =
-          server_->inode_removal_tracker()->GetRemovedInodes();
-      unsigned max_inodes = kSegmentSize / sizeof(InodeNum);
-      for (unsigned pos = 0; pos < removed.size(); pos += max_inodes) {
-        unsigned num_inodes = std::min(max_inodes,
-                                       unsigned(removed.size() - pos));
-        FIM_PTR<IFim> fim = DSResyncRemovalFim::MakePtr(
-            num_inodes * sizeof(InodeNum));
-        std::memcpy(fim->tail_buf(), removed.data() + pos,
-                    num_inodes * sizeof(InodeNum));
-        SendResyncFim(shaped_sender, fim, &count);
-      }
-    }
     for (; !pending_inodes_.empty(); pending_inodes_.pop_back()) {
       InodeNum inode = pending_inodes_.back();
       boost::scoped_ptr<IChecksumGroupIterator> cg_iter(
