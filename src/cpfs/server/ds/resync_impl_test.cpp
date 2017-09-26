@@ -111,10 +111,7 @@ ACTION_P(SetStatbufCtime, n) {
 }
 
 TEST_F(DSResyncTest, ResyncSenderEmpty) {
-  MockIShapedSender* shaped_sender = new MockIShapedSender;
-  EXPECT_CALL(s_sender_maker_, Make(
-      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
-      .WillOnce(Return(shaped_sender));
+  // SendDirFims
   MockIDirIterator* dir_iterator = new MockIDirIterator;
   EXPECT_CALL(*store_, List())
       .WillOnce(Return(dir_iterator));
@@ -123,12 +120,28 @@ TEST_F(DSResyncTest, ResyncSenderEmpty) {
                       SetArgPointee<1>(true),
                       Return(true)))
       .WillOnce(Return(false));
+  MockIShapedSender* shaped_sender_1 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 262144))
+      .WillOnce(Return(shaped_sender_1));
+  EXPECT_CALL(*shaped_sender_1, WaitAllReplied());
+  // ReadResyncList
+  FIM_PTR<DSResyncListReplyFim> reply = DSResyncListReplyFim::MakePtr();
+  (*reply)->num_inode = 0;
+  EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
+      .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
+                      Return(true)));
+  // SendAllResync
+  MockIShapedSender* shaped_sender_2 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
+      .WillOnce(Return(shaped_sender_2));
   EXPECT_CALL(*inode_removal_tracker_, GetRemovedInodes())
       .WillOnce(Return(std::vector<InodeNum>()));
   FIM_PTR<IFim> req;
-  EXPECT_CALL(*shaped_sender, SendFim(_))
+  EXPECT_CALL(*shaped_sender_2, SendFim(_))
       .WillOnce(SaveArg<0>(&req));
-  EXPECT_CALL(*shaped_sender, WaitAllReplied());
+  EXPECT_CALL(*shaped_sender_2, WaitAllReplied());
 
   resync_sender_->Run();
   EXPECT_EQ(kDSResyncDataEndFim, req->type());
@@ -137,25 +150,38 @@ TEST_F(DSResyncTest, ResyncSenderEmpty) {
 }
 
 TEST_F(DSResyncTest, ResyncSenderRemove) {
-  MockIShapedSender* shaped_sender = new MockIShapedSender;
-  EXPECT_CALL(s_sender_maker_, Make(
-      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
-      .WillOnce(Return(shaped_sender));
+  // SendDirFims
   MockIDirIterator* dir_iterator = new MockIDirIterator;
   EXPECT_CALL(*store_, List())
       .WillOnce(Return(dir_iterator));
   EXPECT_CALL(*dir_iterator, GetNext(_, _, _))
       .WillOnce(Return(false));
+  MockIShapedSender* shaped_sender_1 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 262144))
+      .WillOnce(Return(shaped_sender_1));
+  EXPECT_CALL(*shaped_sender_1, WaitAllReplied());
+  // ReadResyncList
+  FIM_PTR<DSResyncListReplyFim> reply = DSResyncListReplyFim::MakePtr();
+  (*reply)->num_inode = 0;
+  EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
+      .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
+                      Return(true)));
+  // SendAllResync
+  MockIShapedSender* shaped_sender_2 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
+      .WillOnce(Return(shaped_sender_2));
   std::vector<InodeNum> removed;
   removed.push_back(100);
   removed.push_back(200);
   EXPECT_CALL(*inode_removal_tracker_, GetRemovedInodes())
       .WillOnce(Return(removed));
   FIM_PTR<IFim> req1, req2;
-  EXPECT_CALL(*shaped_sender, SendFim(_))
+  EXPECT_CALL(*shaped_sender_2, SendFim(_))
       .WillOnce(SaveArg<0>(&req1))
       .WillOnce(SaveArg<0>(&req2));
-  EXPECT_CALL(*shaped_sender, WaitAllReplied());
+  EXPECT_CALL(*shaped_sender_2, WaitAllReplied());
 
   resync_sender_->Run();
   EXPECT_EQ(kDSResyncRemovalFim, req1->type());
@@ -170,10 +196,7 @@ TEST_F(DSResyncTest, ResyncSenderRemove) {
 }
 
 TEST_F(DSResyncTest, ResyncSenderEmptyFile) {
-  MockIShapedSender* shaped_sender = new MockIShapedSender;
-  EXPECT_CALL(s_sender_maker_, Make(
-      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
-      .WillOnce(Return(shaped_sender));
+  // SendDirFims
   MockIDirIterator* dir_iterator = new MockIDirIterator;
   EXPECT_CALL(*store_, List())
       .WillOnce(Return(dir_iterator));
@@ -188,6 +211,28 @@ TEST_F(DSResyncTest, ResyncSenderEmptyFile) {
                       SetArgPointee<1>(false),
                       Return(true)))
       .WillOnce(Return(false));
+  MockIShapedSender* shaped_sender_1 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 262144))
+      .WillOnce(Return(shaped_sender_1));
+  FIM_PTR<IFim> req1;
+  EXPECT_CALL(*shaped_sender_1, SendFim(_))
+      .WillOnce(SaveArg<0>(&req1));
+  EXPECT_CALL(*shaped_sender_1, WaitAllReplied());
+  // ReadResyncList
+  FIM_PTR<DSResyncListReplyFim> reply =
+      DSResyncListReplyFim::MakePtr(sizeof(InodeNum));
+  (*reply)->num_inode = 1;
+  InodeNum* buf = reinterpret_cast<InodeNum*>(reply->tail_buf());
+  buf[0] = 5;
+  EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
+      .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
+                      Return(true)));
+  // SendAllResync
+  MockIShapedSender* shaped_sender_2 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
+      .WillOnce(Return(shaped_sender_2));
   EXPECT_CALL(*inode_removal_tracker_, GetRemovedInodes())
       .WillOnce(Return(std::vector<InodeNum>()));
   MockIChecksumGroupIterator* cg_iter = new MockIChecksumGroupIterator;
@@ -200,10 +245,10 @@ TEST_F(DSResyncTest, ResyncSenderEmptyFile) {
   EXPECT_CALL(*cg_iter, GetNext(_, _))
       .WillOnce(Return(0));
   FIM_PTR<IFim> info_fim;
-  EXPECT_CALL(*shaped_sender, SendFim(_))
+  EXPECT_CALL(*shaped_sender_2, SendFim(_))
       .WillOnce(SaveArg<0>(&info_fim))
       .WillOnce(DoDefault());
-  EXPECT_CALL(*shaped_sender, WaitAllReplied());
+  EXPECT_CALL(*shaped_sender_2, WaitAllReplied());
 
   resync_sender_->Run();
   ASSERT_EQ(kDSResyncInfoFim, info_fim->type());
@@ -215,10 +260,7 @@ TEST_F(DSResyncTest, ResyncSenderEmptyFile) {
 }
 
 TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
-  MockIShapedSender* shaped_sender = new MockIShapedSender;
-  EXPECT_CALL(s_sender_maker_, Make(
-      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
-      .WillOnce(Return(shaped_sender));
+  // SendDirFims
   MockIDirIterator* dir_iterator = new MockIDirIterator;
   EXPECT_CALL(*store_, List())
       .WillOnce(Return(dir_iterator));
@@ -227,6 +269,28 @@ TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
                       SetArgPointee<1>(false),
                       Return(true)))
       .WillOnce(Return(false));
+  MockIShapedSender* shaped_sender_1 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 262144))
+      .WillOnce(Return(shaped_sender_1));
+  FIM_PTR<IFim> req1;
+  EXPECT_CALL(*shaped_sender_1, SendFim(_))
+      .WillOnce(SaveArg<0>(&req1));
+  EXPECT_CALL(*shaped_sender_1, WaitAllReplied());
+  // ReadResyncList
+  FIM_PTR<DSResyncListReplyFim> reply = DSResyncListReplyFim::MakePtr(
+      sizeof(InodeNum));
+  (*reply)->num_inode = 1;
+  InodeNum* buf = reinterpret_cast<InodeNum*>(reply->tail_buf());
+  buf[0] = 5;
+  EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
+      .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
+                      Return(true)));
+  // SendAllResync
+  MockIShapedSender* shaped_sender_2 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
+      .WillOnce(Return(shaped_sender_2));
   EXPECT_CALL(*inode_removal_tracker_, GetRemovedInodes())
       .WillOnce(Return(std::vector<InodeNum>()));
   MockIChecksumGroupIterator* cg_iter = new MockIChecksumGroupIterator;
@@ -243,12 +307,12 @@ TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
                       SetArrayArgument<1>(file_data, file_data + 5),
                       Return(5)))
       .WillOnce(Return(0));
-  FIM_PTR<IFim> req1, req2;
-  EXPECT_CALL(*shaped_sender, SendFim(_))
+  FIM_PTR<IFim> req2;
+  EXPECT_CALL(*shaped_sender_2, SendFim(_))
       .WillOnce(DoDefault())
       .WillOnce(SaveArg<0>(&req1))
       .WillOnce(SaveArg<0>(&req2));
-  EXPECT_CALL(*shaped_sender, WaitAllReplied());
+  EXPECT_CALL(*shaped_sender_2, WaitAllReplied());
 
   resync_sender_->Run();
   DSResyncFim& req = static_cast<DSResyncFim&>(*req1);
@@ -259,10 +323,7 @@ TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
 }
 
 TEST_F(DSResyncTest, ResyncSenderTwoFiles) {
-  MockIShapedSender* shaped_sender = new MockIShapedSender;
-  EXPECT_CALL(s_sender_maker_, Make(
-      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
-      .WillOnce(Return(shaped_sender));
+  // SendDirFims
   MockIDirIterator* dir_iterator = new MockIDirIterator;
   EXPECT_CALL(*store_, List())
       .WillOnce(Return(dir_iterator));
@@ -274,6 +335,29 @@ TEST_F(DSResyncTest, ResyncSenderTwoFiles) {
                       SetArgPointee<1>(false),
                       Return(true)))
       .WillOnce(Return(false));
+  MockIShapedSender* shaped_sender_1 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 262144))
+      .WillOnce(Return(shaped_sender_1));
+  FIM_PTR<IFim> req1;
+  EXPECT_CALL(*shaped_sender_1, SendFim(_))
+      .WillOnce(SaveArg<0>(&req1));
+  EXPECT_CALL(*shaped_sender_1, WaitAllReplied());
+  // ReadResyncList
+  FIM_PTR<DSResyncListReplyFim> reply =
+      DSResyncListReplyFim::MakePtr(2 * sizeof(InodeNum));
+  (*reply)->num_inode = 2;
+  InodeNum* buf = reinterpret_cast<InodeNum*>(reply->tail_buf());
+  buf[0] = 5;
+  buf[1] = 10;
+  EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
+      .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
+                      Return(true)));
+  // SendAllResync
+  MockIShapedSender* shaped_sender_2 = new MockIShapedSender;
+  EXPECT_CALL(s_sender_maker_, Make(
+      boost::static_pointer_cast<IReqTracker>(ds_tracker_), 32768))
+      .WillOnce(Return(shaped_sender_2));
   EXPECT_CALL(*inode_removal_tracker_, GetRemovedInodes())
       .WillOnce(Return(std::vector<InodeNum>()));
   MockIChecksumGroupIterator* cg_iter1 = new MockIChecksumGroupIterator;
@@ -301,9 +385,9 @@ TEST_F(DSResyncTest, ResyncSenderTwoFiles) {
                       SetArrayArgument<1>(file_data, file_data + 5),
                       Return(5)))
       .WillOnce(Return(0));
-  EXPECT_CALL(*shaped_sender, SendFim(_))
+  EXPECT_CALL(*shaped_sender_2, SendFim(_))
       .Times(5);
-  EXPECT_CALL(*shaped_sender, WaitAllReplied());
+  EXPECT_CALL(*shaped_sender_2, WaitAllReplied());
 
   resync_sender_->Run();
 

@@ -129,15 +129,10 @@ class ResyncSender : public IResyncSender {
     boost::shared_ptr<IReqTracker> target_tracker =
         server_->tracker_mapper()->GetDSTracker(
             server_->store()->ds_group(), target_);
-    if (server_->opt_resync()) {
-      LOG(notice, Degraded, "Sending inode list for DS Resync");
-      SendDirFims(target_tracker);
-      LOG(notice, Degraded, "Reading resync inode list for DS Resync");
-      ReadResyncList(target_tracker);
-    } else {
-      LOG(notice, Degraded, "Building resync inode list for DS Resync");
-      SetFullResyncList();
-    }
+    LOG(notice, Degraded, "Sending inode list for DS Resync");
+    SendDirFims(target_tracker);
+    LOG(notice, Degraded, "Reading resync inode list for DS Resync");
+    ReadResyncList(target_tracker);
     std::sort(pending_inodes_.begin(), pending_inodes_.end());
     std::reverse(pending_inodes_.begin(), pending_inodes_.end());
     LOG(notice, Degraded, "Sending data Fims for DS Resync");
@@ -162,10 +157,11 @@ class ResyncSender : public IResyncSender {
    */
   void SendDirFims(boost::shared_ptr<IReqTracker> target_tracker) {
     boost::scoped_ptr<IDirIterator> iter;
-    time_t max_old_ctime = std::max(
-        uint64_t(kReplAndIODelay),
-        server_->dsg_ready_time_keeper()->GetLastUpdate())
-        - kReplAndIODelay;
+    time_t max_old_ctime = 0;
+    if (server_->opt_resync())
+      max_old_ctime = std::max(
+          uint64_t(kReplAndIODelay),
+          server_->dsg_ready_time_keeper()->GetLastUpdate()) - kReplAndIODelay;
     if (max_old_ctime) {
       iter.reset(server_->store()->InodeList(server_->durable_range()->Get()));
       iter->SetFilterCTime(max_old_ctime);
@@ -226,23 +222,6 @@ class ResyncSender : public IResyncSender {
       InodeNum* inodes = reinterpret_cast<InodeNum*>(rreply.tail_buf());
       for (InodeNum i = 0; i < rreply.tail_buf_size() / sizeof(inodes[0]); ++i)
         pending_inodes_.push_back(inodes[i]);
-    }
-  }
-
-  /**
-   * List the directory and use it as the resync list.  This method is
-   * used if the replacement DS has no data which can be reused.
-   *
-   * @param target_tracker The tracker used to send the requests
-   */
-  void SetFullResyncList() {
-    boost::scoped_ptr<IDirIterator> iter(server_->store()->List());
-    std::string name;
-    bool is_dir;
-    while (iter->GetNext(&name, &is_dir)) {
-      InodeNum inode = InodeFromDirIter(name, is_dir);
-      if (inode)
-        pending_inodes_.push_back(inode);
     }
   }
 
