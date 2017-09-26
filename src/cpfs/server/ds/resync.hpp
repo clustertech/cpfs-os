@@ -9,6 +9,7 @@
  */
 
 #include <boost/function.hpp>
+#include <boost/shared_ptr.hpp>
 
 #include "common.hpp"
 #include "fim.hpp"
@@ -16,6 +17,9 @@
 #include "shaped_sender.hpp"
 
 namespace cpfs {
+
+class IReqTracker;
+
 namespace server {
 namespace ds {
 
@@ -39,6 +43,45 @@ class IResyncSender {
    * @param s_sender_maker The sender maker to use
    */
   virtual void SetShapedSenderMaker(ShapedSenderMaker s_sender_maker) = 0;
+
+  // The following are more private functions exported mostly for unit tests
+
+  /**
+   * Send the inode directory requests.  The store is listed to find
+   * all inodes kept by the DS, and a DSResyncDirFim is sent for each
+   * of them telling the receiver the availability of that inode in
+   * the DS, and request for a reply.  The reply allows these Fims to
+   * be shaped, to avoid overwhelming the target with a huge number of
+   * Fims.
+   *
+   * @param target_tracker The tracker used to send the requests
+   */
+  virtual void SendDirFims(boost::shared_ptr<IReqTracker> target_tracker) = 0;
+
+  /**
+   * Request for the resync inode list and wait for reply.  The
+   * process is broken into many requests so that each reply need not
+   * be very long.
+   *
+   * @param target_tracker The tracker used to send the requests
+   */
+  virtual void ReadResyncList(
+      boost::shared_ptr<IReqTracker> target_tracker) = 0;
+
+  /**
+   * Send data removal requests.
+   *
+   * @param target_tracker The tracker used to send the requests
+   */
+  virtual void SendDataRemoval(
+      boost::shared_ptr<IReqTracker> target_tracker) = 0;
+
+  /**
+   * Send all resync requests to resync a replacement DS.
+   *
+   * @param target_tracker The tracker used to send the requests
+   */
+  virtual void SendAllResync(boost::shared_ptr<IReqTracker> target_tracker) = 0;
 };
 
 /**

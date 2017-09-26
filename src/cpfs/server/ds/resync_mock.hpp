@@ -12,8 +12,12 @@ namespace server {
 namespace ds {
 
 #define OBJ_METHODS                                                     \
+  ((Run, void,))                                                        \
   ((SetShapedSenderMaker, void, (ShapedSenderMaker)))                   \
-  ((Run, void,))
+  ((SendDirFims, void, (boost::shared_ptr<IReqTracker>)))               \
+  ((ReadResyncList, void, (boost::shared_ptr<IReqTracker>)))            \
+  ((SendDataRemoval, void, (boost::shared_ptr<IReqTracker>)))           \
+  ((SendAllResync, void, (boost::shared_ptr<IReqTracker>)))
 
 class MockIResyncSender : public IResyncSender {
  public:

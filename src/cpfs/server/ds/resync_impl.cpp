@@ -131,32 +131,14 @@ class ResyncSender : public IResyncSender {
             server_->store()->ds_group(), target_);
     LOG(notice, Degraded, "Sending inode list for DS Resync");
     SendDirFims(target_tracker);
-    LOG(notice, Degraded, "Reading resync inode list for DS Resync");
-    ReadResyncList(target_tracker);
-    std::sort(pending_inodes_.begin(), pending_inodes_.end());
-    std::reverse(pending_inodes_.begin(), pending_inodes_.end());
     LOG(notice, Degraded, "Sending data removal requests");
     SendDataRemoval(target_tracker);
+    LOG(notice, Degraded, "Reading resync inode list for DS Resync");
+    ReadResyncList(target_tracker);
     LOG(notice, Degraded, "Sending inode data");
     SendAllResync(target_tracker);
   }
 
- private:
-  BaseDataServer* server_; /**< Data server using the sender */
-  GroupRole target_; /**< Receiver of the current resync, if any */
-  ShapedSenderMaker s_sender_maker_; /**< Make shaped senders */
-  std::vector<InodeNum> pending_inodes_; /**< Inodes to resync, reversed */
-
-  /**
-   * Send the inode directory requests.  The store is listed to find
-   * all inodes kept by the DS, and a DSResyncDirFim is sent for each
-   * of them telling the receiver the availability of that inode in
-   * the DS, and request for a reply.  The reply allows these Fims to
-   * be shaped, to avoid overwhelming the target with a huge number of
-   * Fims.
-   *
-   * @param target_tracker The tracker used to send the requests
-   */
   void SendDirFims(boost::shared_ptr<IReqTracker> target_tracker) {
     boost::scoped_ptr<IDirIterator> iter;
     time_t max_old_ctime = 0;
@@ -198,13 +180,25 @@ class ResyncSender : public IResyncSender {
     shaped_sender->WaitAllReplied();
   }
 
-  /**
-   * Request for the resync inode list and wait for reply.  The
-   * process is broken into many requests so that each reply need not
-   * be very long.
-   *
-   * @param target_tracker The tracker used to send the requests
-   */
+  void SendDataRemoval(boost::shared_ptr<IReqTracker> target_tracker) {
+    boost::scoped_ptr<IShapedSender> shaped_sender(
+        s_sender_maker_(target_tracker, kMaxResyncFims));
+    uint64_t count = 0;
+    std::vector<InodeNum> removed =
+        server_->inode_removal_tracker()->GetRemovedInodes();
+    unsigned max_inodes = kSegmentSize / sizeof(InodeNum);
+    for (unsigned pos = 0; pos < removed.size(); pos += max_inodes) {
+      unsigned num_inodes = std::min(max_inodes,
+                                     unsigned(removed.size() - pos));
+      FIM_PTR<IFim> fim = DSResyncRemovalFim::MakePtr(
+          num_inodes * sizeof(InodeNum));
+      std::memcpy(fim->tail_buf(), removed.data() + pos,
+                  num_inodes * sizeof(InodeNum));
+      SendResyncFim(shaped_sender, fim, &count);
+    }
+    shaped_sender->WaitAllReplied();
+  }
+
   void ReadResyncList(boost::shared_ptr<IReqTracker> target_tracker) {
     InodeNum num_inodes = 1;
     while (pending_inodes_.size() < num_inodes) {
@@ -225,37 +219,10 @@ class ResyncSender : public IResyncSender {
       for (InodeNum i = 0; i < rreply.tail_buf_size() / sizeof(inodes[0]); ++i)
         pending_inodes_.push_back(inodes[i]);
     }
+    std::sort(pending_inodes_.begin(), pending_inodes_.end());
+    std::reverse(pending_inodes_.begin(), pending_inodes_.end());
   }
 
-  /**
-   * Send data removal requests.
-   *
-   * @param target_tracker The tracker used to send the requests
-   */
-  void SendDataRemoval(boost::shared_ptr<IReqTracker> target_tracker) {
-    boost::scoped_ptr<IShapedSender> shaped_sender(
-        s_sender_maker_(target_tracker, kMaxResyncFims));
-    uint64_t count = 0;
-    std::vector<InodeNum> removed =
-        server_->inode_removal_tracker()->GetRemovedInodes();
-    unsigned max_inodes = kSegmentSize / sizeof(InodeNum);
-    for (unsigned pos = 0; pos < removed.size(); pos += max_inodes) {
-      unsigned num_inodes = std::min(max_inodes,
-                                     unsigned(removed.size() - pos));
-      FIM_PTR<IFim> fim = DSResyncRemovalFim::MakePtr(
-          num_inodes * sizeof(InodeNum));
-      std::memcpy(fim->tail_buf(), removed.data() + pos,
-                  num_inodes * sizeof(InodeNum));
-      SendResyncFim(shaped_sender, fim, &count);
-    }
-    shaped_sender->WaitAllReplied();
-  }
-
-  /**
-   * Send all resync requests to resync a replacement DS.
-   *
-   * @param target_tracker The tracker used to send the requests
-   */
   void SendAllResync(boost::shared_ptr<IReqTracker> target_tracker) {
     boost::scoped_ptr<IShapedSender> shaped_sender(
         s_sender_maker_(target_tracker, kMaxResyncFims));
@@ -276,6 +243,12 @@ class ResyncSender : public IResyncSender {
     shaped_sender->WaitAllReplied();
     LOG(notice, Degraded, "All replies received, resync complete");
   }
+
+ private:
+  BaseDataServer* server_; /**< Data server using the sender */
+  GroupRole target_; /**< Receiver of the current resync, if any */
+  ShapedSenderMaker s_sender_maker_; /**< Make shaped senders */
+  std::vector<InodeNum> pending_inodes_; /**< Inodes to resync, reversed */
 
   static void SendResyncFim(
       const boost::scoped_ptr<IShapedSender>& shaped_sender,
@@ -422,8 +395,8 @@ class ResyncFimProcessor
   explicit ResyncFimProcessor(BaseDataServer* server)
       : server_(server), data_mutex_(MUTEX_INIT), enabled_(false) {
     AddHandler(&ResyncFimProcessor::HandleDSResyncDir);
-    AddHandler(&ResyncFimProcessor::HandleDSResyncList);
     AddHandler(&ResyncFimProcessor::HandleDSResyncRemoval);
+    AddHandler(&ResyncFimProcessor::HandleDSResyncList);
     AddHandler(&ResyncFimProcessor::HandleDSResyncInfo);
     AddHandler(&ResyncFimProcessor::HandleDSResync);
     AddHandler(&ResyncFimProcessor::HandleDSResyncDataEnd);
@@ -493,21 +466,6 @@ class ResyncFimProcessor
     inode_info_map_.clear();
   }
 
-  /**
-   * @return true if all other DSs of the same group have sent their
-   * first Fim.
-   */
-  bool CheckDSInfosSize() {
-    if (ds_infos_.size() >= kNumDSPerGroup) {
-      LOG(error, Server, "Too many peers for DS resync");
-      if (completion_handler_)
-        completion_handler_(false);
-      Reset();
-      return false;
-    }
-    return ds_infos_.size() == kNumDSPerGroup - 1;
-  }
-
   bool HandleDSResyncDir(const FIM_PTR<DSResyncDirFim>& fim,
                          const boost::shared_ptr<IFimSocket>& peer) {
     ReplyOnExit r(fim, peer);
@@ -520,6 +478,17 @@ class ResyncFimProcessor
     for (unsigned i = 0; i < num_recs; ++i)
       updated_inodes_.insert(recs[i]);
     r.SetResult(0);
+    return true;
+  }
+
+  bool HandleDSResyncRemoval(const FIM_PTR<DSResyncRemovalFim>& fim,
+                             const boost::shared_ptr<IFimSocket>& peer) {
+    InodeNum num_removed = fim->tail_buf_size() / sizeof(InodeNum);
+    const InodeNum* removed = reinterpret_cast<const InodeNum*>(
+        fim->tail_buf());
+    for (InodeNum i = 0; i < num_removed; ++i)
+      server_->store()->FreeData(removed[i], true);
+    ReplyOnExit(fim, peer).SetResult(0);
     return true;
   }
 
@@ -645,17 +614,6 @@ class ResyncFimProcessor
     InodeNum* inodes = reinterpret_cast<InodeNum*>(reply->tail_buf());
     for (InodeNum i = 0; i < num_return; ++i)
       inodes[i] = resync_list_[start_idx + i];
-  }
-
-  bool HandleDSResyncRemoval(const FIM_PTR<DSResyncRemovalFim>& fim,
-                             const boost::shared_ptr<IFimSocket>& peer) {
-    InodeNum num_removed = fim->tail_buf_size() / sizeof(InodeNum);
-    const InodeNum* removed = reinterpret_cast<const InodeNum*>(
-        fim->tail_buf());
-    for (InodeNum i = 0; i < num_removed; ++i)
-      server_->store()->FreeData(removed[i], true);
-    ReplyOnExit(fim, peer).SetResult(0);
-    return true;
   }
 
   bool HandleDSResyncInfo(const FIM_PTR<DSResyncInfoFim>& fim,
@@ -814,6 +772,21 @@ class ResyncFimProcessor
       last_inode_ = inode;
     }
     curr_writer_->Write(data, size, cg_off);
+  }
+
+  /**
+   * @return true if all other DSs of the same group have sent their
+   * first Fim.
+   */
+  bool CheckDSInfosSize() {
+    if (ds_infos_.size() >= kNumDSPerGroup) {
+      LOG(error, Server, "Too many peers for DS resync");
+      if (completion_handler_)
+        completion_handler_(false);
+      Reset();
+      return false;
+    }
+    return ds_infos_.size() == kNumDSPerGroup - 1;
   }
 };
 
