@@ -64,8 +64,10 @@ class IResyncSender {
    * be very long.
    *
    * @param target_tracker The tracker used to send the requests
+   *
+   * @return Number of inodes to resync
    */
-  virtual void ReadResyncList(
+  virtual size_t ReadResyncList(
       boost::shared_ptr<IReqTracker> target_tracker) = 0;
 
   /**

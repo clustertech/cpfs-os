@@ -1367,26 +1367,17 @@ DEFINE_FIM_CLASS_VOID(21010, DSResyncDirFim, 0);
 
 /**
  * Fim part for DS resync list request.  DS use it as an indication
- * that the resync dir is completed, and reply to it the size of the
- * consolidated resync list once ready.  Initially, a start_idx of 0
- * is given, as well as a reasonably-sized max_reply to bound the
- * bandwidth usage.  Once replied, further DSResyncListFim can be sent
- * to retrieve the remaining elements in the consolidated resync list.
+ * that it is ready for a new phase of DS data resync, and reply to it
+ * a portion of the resync list once it is ready (all DSs have reach
+ * the same progress).
  */
-DEFINE_FIM_CLASS_STRUCT(21020, DSResyncListFim, 0) {
-  InodeNum start_idx; /**< The starting index in the resync list requested */
-  InodeNum max_reply; /**< The maximum number of inodes to return */
-  FIM_STRUCT_END(21020, DSResyncListFim, 0);
-};
+DEFINE_FIM_CLASS_VOID(21020, DSResyncListFim, 0);
 
 /**
  * Fim part for DS resync list reply.  Actual inode numbers are stored
  * in the tail buffer.
  */
-DEFINE_FIM_CLASS_STRUCT(21021, DSResyncListReplyFim, kFimFlagReply) {
-  InodeNum num_inode; /**< The total number of inodes to resync */
-  FIM_STRUCT_END(21021, DSResyncListReplyFim, kFimFlagReply);
-};
+DEFINE_FIM_CLASS_VOID(21021, DSResyncListReplyFim, kFimFlagReply);
 
 /**
  * Fim part for DS resync inode removal.  Actual inode numbers are

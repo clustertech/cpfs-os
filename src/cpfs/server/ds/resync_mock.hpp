@@ -15,7 +15,7 @@ namespace ds {
   ((Run, void,))                                                        \
   ((SetShapedSenderMaker, void, (ShapedSenderMaker)))                   \
   ((SendDirFims, void, (boost::shared_ptr<IReqTracker>)))               \
-  ((ReadResyncList, void, (boost::shared_ptr<IReqTracker>)))            \
+  ((ReadResyncList, size_t, (boost::shared_ptr<IReqTracker>)))          \
   ((SendDataRemoval, void, (boost::shared_ptr<IReqTracker>)))           \
   ((SendAllResync, void, (boost::shared_ptr<IReqTracker>)))
 
