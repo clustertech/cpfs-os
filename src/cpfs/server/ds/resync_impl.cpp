@@ -235,10 +235,8 @@ class ResyncSender : public IResyncSender {
       while (FIM_PTR<IFim> fim = GetResyncFim(cg_iter.get()))
         SendResyncFim(shaped_sender, fim, &count);
     }
-    SendResyncFim(shaped_sender, DSResyncDataEndFim::MakePtr(), &count);
-    LOG(informational, Degraded, "Completed a phase of DS Resync");
     shaped_sender->WaitAllReplied();
-    pending_inodes_.clear();
+    LOG(informational, Degraded, "Completed a phase of DS Resync");
   }
 
  private:
@@ -341,26 +339,20 @@ class ResyncMgr : public IResyncMgr {
 /**
  * Per-DS information about resync progress held by resync receiver.
  */
-struct ResyncDSInfo {
+struct PendingFims {
   /** Unanswered list Fim */
-  FIM_PTR<DSResyncListFim> pending_list;
-  /** Whether ResyncListFim is seen */
-  bool list_received;
+  FIM_PTR<DSResyncListFim> list;
   /** Resync Fims waiting to be processed */
-  std::list<FIM_PTR<DSResyncFim> > pending_fims;
-  /** Whether the ResyncDataEndFim is seen */
-  bool end_received;
-
-  ResyncDSInfo() : list_received(false), end_received(false) {}
+  std::list<FIM_PTR<DSResyncFim> > resync;
 };
 
 /**
  * Per-file meta-data information.
  */
-struct ResyncDSInodeInfo {
+struct InodeInfo {
   uint64_t size; /**< The largest file size as sent by DSs */
   FSTime mtime; /**< The latest mtime of the file as sent by DSs */
-  ResyncDSInodeInfo() {
+  InodeInfo() {
     size = 0;
     mtime.sec = 0;
     mtime.ns = 0;
@@ -370,13 +362,13 @@ struct ResyncDSInodeInfo {
 /**
  * Type to store meta data information collected.
  */
-typedef boost::unordered_map<InodeNum, ResyncDSInodeInfo> ResyncDSInodeInfoMap;
+typedef boost::unordered_map<InodeNum, InodeInfo> InodeInfoMap;
 
 /**
  * Actual type used to store all resync DS info.
  */
-typedef boost::unordered_map<boost::shared_ptr<IFimSocket>, ResyncDSInfo>
-ResyncDSInfoMap;
+typedef boost::unordered_map<boost::shared_ptr<IFimSocket>, PendingFims>
+PendingFimsMap;
 
 /**
  * Fim processor to handle Resync Fims
@@ -397,7 +389,6 @@ class ResyncFimProcessor
     AddHandler(&ResyncFimProcessor::HandleDSResyncList);
     AddHandler(&ResyncFimProcessor::HandleDSResyncInfo);
     AddHandler(&ResyncFimProcessor::HandleDSResync);
-    AddHandler(&ResyncFimProcessor::HandleDSResyncDataEnd);
   }
 
   void AsyncResync(ResyncCompleteHandler completion_handler) {
@@ -443,12 +434,12 @@ class ResyncFimProcessor
   boost::unordered_set<InodeNum> updated_inodes_;
   /** Computed resync list */
   std::vector<InodeNum> resync_list_;
-  ResyncDSInfoMap ds_infos_; /**< Per-DS information about resync progress */
+  PendingFimsMap pending_fims_map_; /**< Per-DS unanswered Fims */
   uint64_t num_handled_; /**< Number of segments handled. */
   InodeNum last_inode_; /**< Last inode written */
   /** Writer for last_inode_ */
   boost::scoped_ptr<IChecksumGroupWriter> curr_writer_;
-  ResyncDSInodeInfoMap inode_info_map_; /**< Per-inode metadata info */
+  InodeInfoMap inode_info_map_; /**< Per-inode metadata info */
 
   /**
    * Prepare for a new round of DS resync, forgetting the information
@@ -459,7 +450,7 @@ class ResyncFimProcessor
     completion_handler_ = ResyncCompleteHandler();
     updated_inodes_.clear();
     resync_list_.clear();
-    ds_infos_.clear();
+    pending_fims_map_.clear();
     curr_writer_.reset();
     num_handled_ = 0;
     inode_info_map_.clear();
@@ -497,15 +488,15 @@ class ResyncFimProcessor
       ReplyOnExit(fim, peer).SetResult(-EINVAL);
       return true;
     }
-    ResyncDSInfo& info = ds_infos_[peer];
-    info.list_received = true;
-    info.pending_list = fim;
-    if (!CheckDSInfosSize())
+    PendingFims& pending_fims = pending_fims_map_[peer];
+    pending_fims.list = fim;
+    if (!CheckNumDSPending())
       return true;
-    for (ResyncDSInfoMap::const_iterator it = ds_infos_.cbegin();
-         it != ds_infos_.cend();
+    Flush();
+    for (PendingFimsMap::const_iterator it = pending_fims_map_.cbegin();
+         it != pending_fims_map_.cend();
          ++it)
-      if (!it->second.list_received)
+      if (!it->second.list)
         return true;
     if (!resync_list_ready_)
       ComposeResyncList();
@@ -579,10 +570,10 @@ class ResyncFimProcessor
     }
     LOG(informational, Degraded, "Sending resync inode list, size ",
         PVal(phase_resync_list.size()));
-    for (ResyncDSInfoMap::iterator it = ds_infos_.begin();
-         it != ds_infos_.end();
+    for (PendingFimsMap::iterator it = pending_fims_map_.begin();
+         it != pending_fims_map_.end();
          ++it) {
-      const FIM_PTR<DSResyncListFim>& fim = it->second.pending_list;
+      const FIM_PTR<DSResyncListFim>& fim = it->second.list;
       const boost::shared_ptr<IFimSocket>& peer = it->first;
       ReplyOnExit r(fim, peer);
       FIM_PTR<DSResyncListReplyFim> reply =
@@ -592,8 +583,7 @@ class ResyncFimProcessor
       InodeNum* inodes = reinterpret_cast<InodeNum*>(reply->tail_buf());
       for (size_t i = 0; i < phase_resync_list.size(); ++i)
         inodes[i] = phase_resync_list[i];
-      it->second.pending_list = 0;
-      it->second.list_received = false;
+      it->second.list = 0;
     }
     if (phase_resync_list.empty())
       Finalize();
@@ -601,7 +591,7 @@ class ResyncFimProcessor
 
   bool HandleDSResyncInfo(const FIM_PTR<DSResyncInfoFim>& fim,
                           const boost::shared_ptr<IFimSocket>& peer) {
-    ResyncDSInodeInfo& info = inode_info_map_[(*fim)->inode];
+    InodeInfo& info = inode_info_map_[(*fim)->inode];
     info.size = std::max(info.size, (*fim)->size);
     if (info.mtime < (*fim)->mtime) {
       info.mtime.sec = (*fim)->mtime.sec;
@@ -622,26 +612,12 @@ class ResyncFimProcessor
    */
   bool HandleDSResync(const FIM_PTR<DSResyncFim>& fim,
                       const boost::shared_ptr<IFimSocket>& peer) {
-    if (!enabled_) {
+    if (!enabled_ || !CheckNumDSPending()) {
       ReplyOnExit(fim, peer).SetResult(-EINVAL);
       return true;
     }
-    ds_infos_[peer].pending_fims.push_back(fim);
+    pending_fims_map_[peer].resync.push_back(fim);
     Flush();
-    return true;
-  }
-
-  bool HandleDSResyncDataEnd(const FIM_PTR<DSResyncDataEndFim>& fim,
-                             const boost::shared_ptr<IFimSocket>& peer) {
-    ReplyOnExit r(fim, peer);
-    if (!enabled_) {
-      r.SetResult(-EINVAL);
-      return true;
-    }
-    LOG(debug, Degraded, "DS Resync stream end for ", PVal(peer));
-    ds_infos_[peer].end_received = true;
-    Flush();
-    r.SetResult(0);
     return true;
   }
 
@@ -654,26 +630,24 @@ class ResyncFimProcessor
 
   /**
    * Process one DSResyncFim received if possible.  The completion
-   * handler is run if all Fims are handled, and the
-   * DSResyncDataEndFim is received from all peers.
+   * handler is run if all Fims are handled, and the DSResyncListFim
+   * is received from all peers.
    */
   bool FlushOne() {
-    if (!CheckDSInfosSize())
-      return false;
     InodeNum inode = std::numeric_limits<InodeNum>::max();
     std::size_t cg_off = std::numeric_limits<std::size_t>::max();
     bool has_unfinished = false;
-    for (ResyncDSInfoMap::const_iterator it = ds_infos_.cbegin();
-         it != ds_infos_.cend();
+    for (PendingFimsMap::const_iterator it = pending_fims_map_.cbegin();
+         it != pending_fims_map_.cend();
          ++it) {
-      const ResyncDSInfo& ds_info = it->second;
-      if (ds_info.pending_fims.empty()) {
-        if (ds_info.end_received)
+      const PendingFims& pending_fims = it->second;
+      if (pending_fims.resync.empty()) {
+        if (pending_fims.list)
           continue;
         return false;
       }
       has_unfinished = true;
-      DSResyncFim* fim = ds_info.pending_fims.front().get();
+      DSResyncFim* fim = pending_fims.resync.front().get();
       if ((*fim)->inode < inode ||
           (inode == (*fim)->inode && (*fim)->cg_off < cg_off)) {
         inode = (*fim)->inode;
@@ -681,10 +655,6 @@ class ResyncFimProcessor
       }
     }
     if (!has_unfinished) {
-      for (ResyncDSInfoMap::iterator it = ds_infos_.begin();
-           it != ds_infos_.end();
-           ++it)
-        it->second.end_received = false;
       FlushInodeInfo();
       return false;
     }
@@ -706,7 +676,7 @@ class ResyncFimProcessor
    * contents reach the disk.
    */
   void FlushInodeInfo() {
-    for (ResyncDSInodeInfoMap::const_iterator it = inode_info_map_.cbegin();
+    for (InodeInfoMap::const_iterator it = inode_info_map_.cbegin();
          it != inode_info_map_.cend();
          ++it)
       server_->store()->UpdateAttr(
@@ -740,13 +710,13 @@ class ResyncFimProcessor
     char data[kSegmentSize];
     std::memset(data, 0, kSegmentSize);
     std::size_t size = 0;
-    for (ResyncDSInfoMap::iterator it = ds_infos_.begin();
-         it != ds_infos_.end();
+    for (PendingFimsMap::iterator it = pending_fims_map_.begin();
+         it != pending_fims_map_.end();
          ++it) {
-      ResyncDSInfo& ds_info = it->second;
-      if (!ds_info.pending_fims.empty()) {
+      PendingFims& pending_fims = it->second;
+      if (!pending_fims.resync.empty()) {
         const FIM_PTR<DSResyncFim>& fim =
-            ds_info.pending_fims.front();
+            pending_fims.resync.front();
         DSResyncFim* dfim = fim.get();
         if (inode != (*dfim)->inode || cg_off != (*dfim)->cg_off)
           continue;
@@ -754,7 +724,7 @@ class ResyncFimProcessor
         XorBytes(data, dfim->tail_buf(), dfim->tail_buf_size());
         size = std::max(size, std::size_t(dfim->tail_buf_size()));
         ReplyOnExit(fim, it->first).SetResult(0);
-        ds_info.pending_fims.pop_front();
+        pending_fims.resync.pop_front();
       }
     }
     if (std::memcmp(data, kEmptyBuf, size) == 0)
@@ -770,15 +740,15 @@ class ResyncFimProcessor
    * @return true if all other DSs of the same group have sent their
    * first Fim.
    */
-  bool CheckDSInfosSize() {
-    if (ds_infos_.size() >= kNumDSPerGroup) {
+  bool CheckNumDSPending() {
+    if (pending_fims_map_.size() >= kNumDSPerGroup) {
       LOG(error, Server, "Too many peers for DS resync");
       if (completion_handler_)
         completion_handler_(false);
       Reset();
       return false;
     }
-    return ds_infos_.size() == kNumDSPerGroup - 1;
+    return pending_fims_map_.size() == kNumDSPerGroup - 1;
   }
 };
 

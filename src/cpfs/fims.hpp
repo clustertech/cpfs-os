@@ -1354,11 +1354,6 @@ DEFINE_FIM_CLASS_STRUCT(21001, DSResyncFim, 0)  {
 };
 
 /**
- * Fim part for DS resync end.
- */
-DEFINE_FIM_CLASS_VOID(21002, DSResyncDataEndFim, 0);
-
-/**
  * Fim part for DS resync directory.  The actual contents are InodeNum
  * stored in the tail buffer.  It is processed by failed DS to
  * consolidate a resync list for optimized resync.
