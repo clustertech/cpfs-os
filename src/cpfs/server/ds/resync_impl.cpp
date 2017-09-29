@@ -27,6 +27,7 @@
 #include <vector>
 
 #include <boost/foreach.hpp>
+#include <boost/format.hpp>
 #include <boost/function.hpp>
 #include <boost/functional/factory.hpp>
 #include <boost/functional/forward_adapter.hpp>
@@ -219,6 +220,17 @@ class ResyncSender : public IResyncSender {
   }
 
   void SendAllResync(boost::shared_ptr<IReqTracker> target_tracker) {
+    LOG(informational, Degraded, "Sending resync ready");
+    FIM_PTR<DSResyncReadyFim> req = DSResyncReadyFim::MakePtr();
+    boost::shared_ptr<IReqEntry> entry =
+        MakeTransientReqEntry(target_tracker, req);
+    if (!target_tracker->AddRequestEntry(entry))
+      throw std::runtime_error("Socket lost when waiting DS ready ack");
+    FIM_PTR<IFim> reply = entry->WaitReply();
+    if (reply->type() != kDSResyncReadyReplyFim)
+      throw std::runtime_error(
+          (boost::format("Improper reply to DS Resync Ready request: %d")
+           % reply->type()).str());
     LOG(informational, Degraded, "Sending inode data");
     std::reverse(pending_inodes_.begin(), pending_inodes_.end());
     boost::scoped_ptr<IShapedSender> shaped_sender(
@@ -342,6 +354,8 @@ class ResyncMgr : public IResyncMgr {
 struct PendingFims {
   /** Unanswered list Fim */
   FIM_PTR<DSResyncListFim> list;
+  /** Unanswered ready Fim */
+  FIM_PTR<DSResyncReadyFim> ready;
   /** Resync Fims waiting to be processed */
   std::list<FIM_PTR<DSResyncFim> > resync;
 };
@@ -387,6 +401,7 @@ class ResyncFimProcessor
     AddHandler(&ResyncFimProcessor::HandleDSResyncDir);
     AddHandler(&ResyncFimProcessor::HandleDSResyncRemoval);
     AddHandler(&ResyncFimProcessor::HandleDSResyncList);
+    AddHandler(&ResyncFimProcessor::HandleDSResyncReady);
     AddHandler(&ResyncFimProcessor::HandleDSResyncInfo);
     AddHandler(&ResyncFimProcessor::HandleDSResync);
   }
@@ -587,6 +602,33 @@ class ResyncFimProcessor
     }
     if (phase_resync_list.empty())
       Finalize();
+  }
+
+  bool HandleDSResyncReady(const FIM_PTR<DSResyncReadyFim>& fim,
+                           const boost::shared_ptr<IFimSocket>& peer) {
+    if (!enabled_) {
+      ReplyOnExit(fim, peer).SetResult(-EINVAL);
+      return true;
+    }
+    PendingFims& pending_fims = pending_fims_map_[peer];
+    pending_fims.ready = fim;
+    if (!CheckNumDSPending())
+      return true;
+    for (PendingFimsMap::const_iterator it = pending_fims_map_.cbegin();
+         it != pending_fims_map_.cend();
+         ++it)
+      if (!it->second.ready)
+        return true;
+    for (PendingFimsMap::iterator it = pending_fims_map_.begin();
+         it != pending_fims_map_.end();
+         ++it) {
+      const FIM_PTR<DSResyncReadyFim>& fim = it->second.ready;
+      const boost::shared_ptr<IFimSocket>& peer = it->first;
+      ReplyOnExit r(fim, peer);
+      r.SetNormalReply(DSResyncReadyReplyFim::MakePtr());
+      it->second.ready = 0;
+    }
+    return true;
   }
 
   bool HandleDSResyncInfo(const FIM_PTR<DSResyncInfoFim>& fim,

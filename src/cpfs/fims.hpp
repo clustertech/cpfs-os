@@ -1380,4 +1380,14 @@ DEFINE_FIM_CLASS_VOID(21021, DSResyncListReplyFim, kFimFlagReply);
  */
 DEFINE_FIM_CLASS_VOID(21022, DSResyncRemovalFim, 0);
 
+/**
+ * Fim part for DS resync ready indication.
+ */
+DEFINE_FIM_CLASS_VOID(21024, DSResyncReadyFim, 0);
+
+/**
+ * Fim part for DS resync ready indication reply.
+ */
+DEFINE_FIM_CLASS_VOID(21025, DSResyncReadyReplyFim, kFimFlagReply);
+
 }  // namespace cpfs

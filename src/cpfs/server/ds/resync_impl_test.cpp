@@ -164,15 +164,18 @@ TEST_F(DSResyncTest, ResyncSenderFlow) {
   EXPECT_CALL(*inode_removal_tracker_, GetRemovedInodes())
       .WillOnce(Return(std::vector<InodeNum>()));
   EXPECT_CALL(*shaped_sender_2, WaitAllReplied());
-  // ReadResyncList
+  // ReadResyncList / SendAllResync
   FIM_PTR<DSResyncListReplyFim> reply =
       DSResyncListReplyFim::MakePtr(sizeof(InodeNum));
   reinterpret_cast<InodeNum*>(reply->tail_buf())[0] = 5;
-  FIM_PTR<DSResyncListReplyFim> reply2 = DSResyncListReplyFim::MakePtr();
+  FIM_PTR<DSResyncReadyReplyFim> reply2 = DSResyncReadyReplyFim::MakePtr();
+  FIM_PTR<DSResyncListReplyFim> reply3 = DSResyncListReplyFim::MakePtr();
   EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
                       Return(true)))
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply2, 1)),
+                      Return(true)))
+      .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply3, 1)),
                       Return(true)));
   // SendAllResync
   MockIChecksumGroupIterator* cg_iter = new MockIChecksumGroupIterator;
@@ -321,6 +324,10 @@ TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
 
   resync_sender_->ReadResyncList(ds_tracker_);
 
+  FIM_PTR<DSResyncReadyReplyFim> reply2 = DSResyncReadyReplyFim::MakePtr();
+  EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
+      .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply2, 1)),
+                      Return(true)));
   MockIChecksumGroupIterator* cg_iter = new MockIChecksumGroupIterator;
   EXPECT_CALL(*store_, GetChecksumGroupIterator(5))
       .WillOnce(Return(cg_iter));
@@ -363,6 +370,10 @@ TEST_F(DSResyncTest, ResyncSenderTwoFiles) {
 
   resync_sender_->ReadResyncList(ds_tracker_);
 
+  FIM_PTR<DSResyncReadyReplyFim> reply2 = DSResyncReadyReplyFim::MakePtr();
+  EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
+      .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply2, 1)),
+                      Return(true)));
   MockIChecksumGroupIterator* cg_iter1 = new MockIChecksumGroupIterator;
   EXPECT_CALL(*store_, GetChecksumGroupIterator(5))
       .WillOnce(Return(cg_iter1));
@@ -414,6 +425,23 @@ TEST_F(DSResyncTest, ResyncSenderListError2) {
                       Return(true)));
 
   EXPECT_THROW(resync_sender_->ReadResyncList(ds_tracker_), std::runtime_error);
+}
+
+TEST_F(DSResyncTest, ResyncSenderReadyError1) {
+  EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
+      .WillOnce(Return(false));
+
+  EXPECT_THROW(resync_sender_->SendAllResync(ds_tracker_), std::runtime_error);
+}
+
+TEST_F(DSResyncTest, ResyncSenderReadyError2) {
+  FIM_PTR<ResultCodeReplyFim> reply = ResultCodeReplyFim::MakePtr();
+  (*reply)->err_no = 0;
+  EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
+      .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
+                      Return(true)));
+
+  EXPECT_THROW(resync_sender_->SendAllResync(ds_tracker_), std::runtime_error);
 }
 
 TEST_F(DSResyncTest, ResyncMgrExceptional) {
@@ -511,6 +539,15 @@ TEST_F(DSResyncTest, ResyncFimProcessorDisabled) {
   resync_fim_processor_->Process(lfim, fim_socket);
   ResultCodeReplyFim& lreply = dynamic_cast<ResultCodeReplyFim&>(*reply);
   EXPECT_EQ(EINVAL, int(lreply->err_no));
+
+  // Handling of DSResyncListFim
+  EXPECT_CALL(*fim_socket, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&reply));
+
+  FIM_PTR<DSResyncReadyFim> rdfim = DSResyncReadyFim::MakePtr();
+  resync_fim_processor_->Process(rdfim, fim_socket);
+  ResultCodeReplyFim& rdreply = dynamic_cast<ResultCodeReplyFim&>(*reply);
+  EXPECT_EQ(EINVAL, int(rdreply->err_no));
 }
 
 TEST_F(DSResyncTest, ResyncFimProcessorNoResyncFim) {
@@ -548,6 +585,36 @@ TEST_F(DSResyncTest, ResyncFimProcessorRemoval) {
   to_remove[0] = 100;
   to_remove[1] = 300;
   resync_fim_processor_->Process(ifim, fim_socket);
+}
+
+TEST_F(DSResyncTest, ResyncFimProcessorReady) {
+  EXPECT_CALL(*store_, RemoveAll());
+
+  resync_fim_processor_->AsyncResync(boost::bind(
+      GetMockCall(completion_handler_), &completion_handler_, _1));
+
+  // Nothing happen before the last DSResyncReadyFim arrives
+  boost::shared_ptr<MockIFimSocket> fim_sockets[kNumDSPerGroup - 1];
+  for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
+    fim_sockets[i].reset(new MockIFimSocket);
+  for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i)
+    resync_fim_processor_->Process(DSResyncReadyFim::MakePtr(), fim_sockets[i]);
+
+  // The last DSResyncReadyFim causes all the above to be replied
+  FIM_PTR<IFim> fims[kNumDSPerGroup - 1];
+  for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
+    EXPECT_CALL(*fim_sockets[i], WriteMsg(_))
+        .WillOnce(SaveArg<0>(fims + i));
+
+  resync_fim_processor_->Process(DSResyncReadyFim::MakePtr(),
+                                 fim_sockets[kNumDSPerGroup - 2]);
+  for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i) {
+    ASSERT_TRUE(fims[i]);
+    EXPECT_EQ(kDSResyncReadyReplyFim, fims[i]->type());
+  }
+
+  // Next Fim is not replied again
+  resync_fim_processor_->Process(DSResyncReadyFim::MakePtr(), fim_sockets[0]);
 }
 
 TEST_F(DSResyncTest, ResyncFimProcessorEarlyResyncEnd) {
