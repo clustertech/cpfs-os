@@ -10,6 +10,9 @@
 
 #include <stdint.h>
 
+#include <vector>
+
+#include <boost/foreach.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/thread/shared_mutex.hpp>
 
@@ -193,9 +196,41 @@ void BaseDataServer::set_dsg_state(
   dsg_state_->failed_role = failed_role;
 }
 
+void BaseDataServer::set_dsg_inodes_to_resync(
+    boost::unordered_set<InodeNum>* inodes) {
+  dsg_state_->resyncing.clear();
+  dsg_state_->to_resync.clear();
+  dsg_state_->to_resync.swap(*inodes);
+}
+
+bool BaseDataServer::is_inode_to_resync(InodeNum inode) {
+  return dsg_state_->to_resync.find(inode) != dsg_state_->to_resync.end();
+}
+
+void BaseDataServer::set_dsg_inodes_resyncing(
+    const std::vector<InodeNum>& inodes) {
+  BOOST_FOREACH(const InodeNum& elt, dsg_state_->resyncing) {
+    dsg_state_->to_resync.erase(elt);
+  }
+  dsg_state_->resyncing.clear();
+  BOOST_FOREACH(const InodeNum& elt, inodes) {
+    dsg_state_->resyncing.insert(elt);
+  }
+}
+
+bool BaseDataServer::is_inode_resyncing(InodeNum inode) {
+  return dsg_state_->resyncing.find(inode) != dsg_state_->resyncing.end();
+}
+
 void BaseDataServer::ReadLockDSGState(
     boost::shared_lock<boost::shared_mutex>* lock) {
   MUTEX_LOCK(boost::shared_lock, dsg_state_->data_mutex, my_lock);
+  lock->swap(my_lock);
+}
+
+void BaseDataServer::WriteLockDSGState(
+    boost::unique_lock<boost::shared_mutex>* lock) {
+  MUTEX_LOCK(boost::unique_lock, dsg_state_->data_mutex, my_lock);
   lock->swap(my_lock);
 }
 

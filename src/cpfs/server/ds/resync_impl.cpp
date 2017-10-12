@@ -33,6 +33,7 @@
 #include <boost/functional/forward_adapter.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/unordered_set.hpp>
@@ -132,16 +133,16 @@ class ResyncSender : public IResyncSender {
     boost::shared_ptr<IReqTracker> target_tracker =
         server_->tracker_mapper()->GetDSTracker(
             server_->store()->ds_group(), target_);
-    LOG(notice, Degraded, "Sending inode list for DS Resync");
     SendDirFims(target_tracker);
-    LOG(notice, Degraded, "Sending data removal requests");
     SendDataRemoval(target_tracker);
-    while (ReadResyncPhase(target_tracker))
+    ReadResyncList(target_tracker);
+    while (StartResyncPhase(target_tracker))
       SendAllResync(target_tracker);
     LOG(notice, Degraded, "Resync complete");
   }
 
   void SendDirFims(boost::shared_ptr<IReqTracker> target_tracker) {
+    LOG(notice, Degraded, "Sending inode list for DS Resync");
     boost::scoped_ptr<IDirIterator> iter;
     time_t max_old_ctime = 0;
     if (server_->opt_resync())
@@ -183,6 +184,7 @@ class ResyncSender : public IResyncSender {
   }
 
   void SendDataRemoval(boost::shared_ptr<IReqTracker> target_tracker) {
+    LOG(notice, Degraded, "Sending data removal requests");
     boost::scoped_ptr<IShapedSender> shaped_sender(
         s_sender_maker_(target_tracker, kMaxResyncFims));
     uint64_t count = 0;
@@ -201,7 +203,33 @@ class ResyncSender : public IResyncSender {
     shaped_sender->WaitAllReplied();
   }
 
-  size_t ReadResyncPhase(boost::shared_ptr<IReqTracker> target_tracker) {
+  void ReadResyncList(boost::shared_ptr<IReqTracker> target_tracker) {
+    LOG(informational, Degraded, "Reading DS resync list");
+    InodeNum num_inodes = 1;
+    boost::unordered_set<InodeNum> to_resync;
+    while (to_resync.size() < num_inodes) {
+      FIM_PTR<DSResyncListFim> req = DSResyncListFim::MakePtr();
+      (*req)->start_idx = to_resync.size();
+      (*req)->max_reply = kMaxListSize;
+      boost::shared_ptr<IReqEntry> entry =
+          MakeTransientReqEntry(target_tracker, req);
+      if (!target_tracker->AddRequestEntry(entry))
+        throw std::runtime_error("Socket lost during DS Resync");
+      FIM_PTR<IFim> reply = entry->WaitReply();
+      if (reply->type() != kDSResyncListReplyFim)
+        throw std::runtime_error("Improper reply to DS Resync phase request");
+      DSResyncListReplyFim& rreply = static_cast<DSResyncListReplyFim&>(*reply);
+      num_inodes = rreply->num_inode;
+      InodeNum* inodes = reinterpret_cast<InodeNum*>(rreply.tail_buf());
+      for (InodeNum i = 0; i < rreply.tail_buf_size() / sizeof(inodes[0]); ++i)
+        to_resync.insert(inodes[i]);
+    }
+    boost::unique_lock<boost::shared_mutex> lock;
+    server_->WriteLockDSGState(&lock);
+    server_->set_dsg_inodes_to_resync(&to_resync);
+  }
+
+  size_t StartResyncPhase(boost::shared_ptr<IReqTracker> target_tracker) {
     LOG(informational, Degraded, "Starting new DS resync phase");
     FIM_PTR<DSResyncPhaseFim> req = DSResyncPhaseFim::MakePtr();
     boost::shared_ptr<IReqEntry> entry =
@@ -217,6 +245,9 @@ class ResyncSender : public IResyncSender {
       pending_inodes_.push_back(inodes[i]);
     LOG(informational, Degraded, "Got ", PVal(pending_inodes_.size()),
         " inodes");
+    boost::unique_lock<boost::shared_mutex> lock;
+    server_->WriteLockDSGState(&lock);
+    server_->set_dsg_inodes_resyncing(pending_inodes_);
     return pending_inodes_.size();
   }
 
@@ -353,6 +384,8 @@ class ResyncMgr : public IResyncMgr {
  * Per-DS information about resync progress held by resync receiver.
  */
 struct PendingFims {
+  /** Unanswered list Fim */
+  FIM_PTR<DSResyncListFim> list;
   /** Unanswered phase Fim */
   FIM_PTR<DSResyncPhaseFim> phase;
   /** Unanswered ready Fim */
@@ -401,6 +434,7 @@ class ResyncFimProcessor
         enabled_(false), resync_list_ready_(false) {
     AddHandler(&ResyncFimProcessor::HandleDSResyncDir);
     AddHandler(&ResyncFimProcessor::HandleDSResyncRemoval);
+    AddHandler(&ResyncFimProcessor::HandleDSResyncList);
     AddHandler(&ResyncFimProcessor::HandleDSResyncPhase);
     AddHandler(&ResyncFimProcessor::HandleDSResyncReady);
     AddHandler(&ResyncFimProcessor::HandleDSResyncInfo);
@@ -498,6 +532,54 @@ class ResyncFimProcessor
     return true;
   }
 
+  bool HandleDSResyncList(const FIM_PTR<DSResyncListFim>& fim,
+                          const boost::shared_ptr<IFimSocket>& peer) {
+    if (!enabled_) {
+      ReplyOnExit(fim, peer).SetResult(-EINVAL);
+      return true;
+    }
+    if (!resync_list_ready_) {
+      PendingFims& pending_fims = pending_fims_map_[peer];
+      pending_fims.list = fim;
+      if (!CheckNumDSPending())
+        return true;
+      for (PendingFimsMap::const_iterator it = pending_fims_map_.cbegin();
+           it != pending_fims_map_.cend();
+           ++it)
+        if (!it->second.list)
+          return true;  // Defensive, no way to trigger in unit test
+      ComposeResyncList();
+      for (PendingFimsMap::iterator it = pending_fims_map_.begin();
+           it != pending_fims_map_.end();
+           ++it) {
+        ReplyResyncList(it->second.list, it->first);
+        it->second.list = 0;
+      }
+      return true;
+    }
+    ReplyResyncList(fim, peer);
+    return true;
+  }
+
+  void ReplyResyncList(const FIM_PTR<DSResyncListFim>& fim,
+                       const boost::shared_ptr<IFimSocket>& peer) {
+    ReplyOnExit r(fim, peer);
+    InodeNum start_idx = (*fim)->start_idx;
+    InodeNum num_return;
+    if (start_idx >= resync_list_.size())
+      num_return = 0;
+    else
+      num_return = std::min(resync_list_.size() - (*fim)->start_idx,
+                            (*fim)->max_reply);
+    FIM_PTR<DSResyncListReplyFim> reply =
+        DSResyncListReplyFim::MakePtr(num_return * sizeof(InodeNum));
+    r.SetNormalReply(reply);
+    (*reply)->num_inode = resync_list_.size();
+    InodeNum* inodes = reinterpret_cast<InodeNum*>(reply->tail_buf());
+    for (InodeNum i = 0; i < num_return; ++i)
+      inodes[i] = resync_list_[start_idx + i];
+  }
+
   bool HandleDSResyncPhase(const FIM_PTR<DSResyncPhaseFim>& fim,
                            const boost::shared_ptr<IFimSocket>& peer) {
     if (!enabled_) {
@@ -514,8 +596,6 @@ class ResyncFimProcessor
          ++it)
       if (!it->second.phase)
         return true;
-    if (!resync_list_ready_)
-      ComposeResyncList();
     ReplyResyncPhase();
     return true;
   }

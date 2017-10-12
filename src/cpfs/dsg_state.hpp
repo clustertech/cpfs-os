@@ -9,6 +9,7 @@
  */
 
 #include <boost/thread/shared_mutex.hpp>
+#include <boost/unordered_set.hpp>
 
 #include "common.hpp"
 
@@ -56,6 +57,8 @@ struct DSGStateInfo {
   uint64_t state_change_id; /**< State change ID leading to current state */
   DSGroupState dsg_state; /**< Current DSG state */
   GroupRole failed_role; /**< Failed role for kDSGDegraded / kDSGRecovering */
+  boost::unordered_set<InodeNum> to_resync; /**< Inodes awaiting resync */
+  boost::unordered_set<InodeNum> resyncing; /**< Inodes under resync */
 
   /**
    * @param dsg_state The initial DS group state

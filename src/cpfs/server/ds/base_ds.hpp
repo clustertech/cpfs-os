@@ -13,7 +13,10 @@
 
 #include <stdint.h>
 
+#include <vector>
+
 #include <boost/scoped_ptr.hpp>
+#include <boost/unordered_set.hpp>
 
 #include "common.hpp"
 #include "dsg_state.hpp"
@@ -202,11 +205,59 @@ class BaseDataServer : public BaseCpfsServer {
                      boost::unique_lock<boost::shared_mutex>* lock = 0);
 
   /**
+   * Set the inodes pending resync.
+   *
+   * Also clear the resyncing list.
+   *
+   * The caller should probably be holding the DSG state write lock.
+   *
+   * @param inodes The inodes pending replication, cleared after the call
+   */
+  void set_dsg_inodes_to_resync(boost::unordered_set<InodeNum>* inodes);
+
+  /**
+   * Check whether an inode is currently pending resync.
+   *
+   * The caller should probably be holding the DSG state read lock.
+   *
+   * @param inode The inode to check
+   */
+  bool is_inode_to_resync(InodeNum inode);
+
+  /**
+   * Set the inodes currently being resync'ed.
+   *
+   * The originally stored list is removed from the inodes to_resync,
+   * and is then replaced by the list specified here.
+   *
+   * The caller should probably be holding the DSG state write lock.
+   *
+   * @param inodes The inodes being replicated
+   */
+  void set_dsg_inodes_resyncing(const std::vector<InodeNum>& inodes);
+
+  /**
+   * Check whether an inode is currently being resync'ed.
+   *
+   * The caller should probably be holding the DSG state read lock.
+   *
+   * @param inode The inode to check
+   */
+  bool is_inode_resyncing(InodeNum inode);
+
+  /**
    * Prevent update of DSG state.
    *
    * @param lock The lock to keep to prevent DSG state update
    */
   void ReadLockDSGState(boost::shared_lock<boost::shared_mutex>* lock);
+
+  /**
+   * Prepare for update of DSG state.
+   *
+   * @param lock The lock to keep others from reading the DSG state update
+   */
+  void WriteLockDSGState(boost::unique_lock<boost::shared_mutex>* lock);
 
   /**
    * @param state_change_id_ret Where to return the state change ID

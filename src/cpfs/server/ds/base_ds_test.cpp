@@ -3,10 +3,13 @@
 
 #include <stdint.h>
 
+#include <vector>
+
 #include <boost/bind.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <boost/thread/thread.hpp>
+#include <boost/unordered_set.hpp>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -93,6 +96,10 @@ TEST(BaseDSTest, GetSet) {
     EXPECT_EQ(20U, state_change_id);
     EXPECT_EQ(3U, failed);
   }
+  {
+    boost::unique_lock<boost::shared_mutex> lock3;
+    ds.WriteLockDSGState(&lock3);
+  }
   Sleep(0.1)();
   EXPECT_EQ(kDSGDegraded, ds.dsg_state(&state_change_id, &failed));
   EXPECT_EQ(42U, state_change_id);
@@ -148,6 +155,44 @@ TEST(DSTest, Init) {
   EXPECT_CALL(*connector, Listen(_, _, _));
 
   server->Run();
+}
+
+TEST(BaseDSTest, ResyncState) {
+  BaseDataServer ds(InitConfig());
+  // Initial state
+  EXPECT_FALSE(ds.is_inode_to_resync(42));
+  EXPECT_FALSE(ds.is_inode_to_resync(50));
+  // Set to-resync
+  boost::unordered_set<InodeNum> to_resync;
+  to_resync.insert(42);
+  to_resync.insert(50);
+  ds.set_dsg_inodes_to_resync(&to_resync);
+  EXPECT_TRUE(ds.is_inode_to_resync(42));
+  EXPECT_TRUE(ds.is_inode_to_resync(50));
+  EXPECT_FALSE(ds.is_inode_resyncing(42));
+  EXPECT_FALSE(ds.is_inode_resyncing(50));
+  // Set resyncing #1
+  std::vector<InodeNum> resyncing;
+  resyncing.push_back(42);
+  ds.set_dsg_inodes_resyncing(resyncing);
+  EXPECT_TRUE(ds.is_inode_to_resync(42));
+  EXPECT_TRUE(ds.is_inode_to_resync(50));
+  EXPECT_TRUE(ds.is_inode_resyncing(42));
+  EXPECT_FALSE(ds.is_inode_resyncing(50));
+  // Set resyncing #2
+  resyncing.clear();
+  resyncing.push_back(50);
+  ds.set_dsg_inodes_resyncing(resyncing);
+  EXPECT_FALSE(ds.is_inode_to_resync(42));
+  EXPECT_TRUE(ds.is_inode_to_resync(50));
+  EXPECT_FALSE(ds.is_inode_resyncing(42));
+  EXPECT_TRUE(ds.is_inode_resyncing(50));
+  // Clear to-resync
+  ds.set_dsg_inodes_to_resync(&to_resync);
+  EXPECT_FALSE(ds.is_inode_to_resync(42));
+  EXPECT_FALSE(ds.is_inode_to_resync(50));
+  EXPECT_FALSE(ds.is_inode_resyncing(42));
+  EXPECT_FALSE(ds.is_inode_resyncing(50));
 }
 
 }  // namespace

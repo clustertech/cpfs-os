@@ -59,13 +59,19 @@ class IResyncSender {
   virtual void SendDirFims(boost::shared_ptr<IReqTracker> target_tracker) = 0;
 
   /**
+   * Request for the list of inodes that are awaiting resync.
+   */
+  virtual void ReadResyncList(
+      boost::shared_ptr<IReqTracker> target_tracker) = 0;
+
+  /**
    * Request for the next resync phase and wait for reply.
    *
    * @param target_tracker The tracker used to send the requests
    *
    * @return Number of inodes to resync
    */
-  virtual size_t ReadResyncPhase(
+  virtual size_t StartResyncPhase(
       boost::shared_ptr<IReqTracker> target_tracker) = 0;
 
   /**
