@@ -111,7 +111,7 @@ class DSResyncTest : public ::testing::Test {
                         FIM_PTR<IFim>* fims, uint64_t* req_id) {
     for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i) {
       fim_sockets[i].reset(new MockIFimSocket);
-      FIM_PTR<IFim> efim = DSResyncListFim::MakePtr();
+      FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
       efim->set_req_id(++*req_id);
       resync_fim_processor_->Process(efim, fim_sockets[i]);
     }
@@ -130,7 +130,7 @@ class DSResyncTest : public ::testing::Test {
           .WillOnce(SaveArg<0>(fims + i));
     }
 
-    resync_fim_processor_->Process(DSResyncListFim::MakePtr(),
+    resync_fim_processor_->Process(DSResyncPhaseFim::MakePtr(),
                                    fim_sockets[kNumDSPerGroup - 2]);
   }
 };
@@ -164,12 +164,12 @@ TEST_F(DSResyncTest, ResyncSenderFlow) {
   EXPECT_CALL(*inode_removal_tracker_, GetRemovedInodes())
       .WillOnce(Return(std::vector<InodeNum>()));
   EXPECT_CALL(*shaped_sender_2, WaitAllReplied());
-  // ReadResyncList / SendAllResync
-  FIM_PTR<DSResyncListReplyFim> reply =
-      DSResyncListReplyFim::MakePtr(sizeof(InodeNum));
+  // ReadResyncPhase / SendAllResync
+  FIM_PTR<DSResyncPhaseReplyFim> reply =
+      DSResyncPhaseReplyFim::MakePtr(sizeof(InodeNum));
   reinterpret_cast<InodeNum*>(reply->tail_buf())[0] = 5;
   FIM_PTR<DSResyncReadyReplyFim> reply2 = DSResyncReadyReplyFim::MakePtr();
-  FIM_PTR<DSResyncListReplyFim> reply3 = DSResyncListReplyFim::MakePtr();
+  FIM_PTR<DSResyncPhaseReplyFim> reply3 = DSResyncPhaseReplyFim::MakePtr();
   EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
                       Return(true)))
@@ -314,7 +314,7 @@ TEST_F(DSResyncTest, ResyncSenderRemove) {
 }
 
 TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
-  FIM_PTR<DSResyncListReplyFim> reply = DSResyncListReplyFim::MakePtr(
+  FIM_PTR<DSResyncPhaseReplyFim> reply = DSResyncPhaseReplyFim::MakePtr(
       sizeof(InodeNum));
   InodeNum* buf = reinterpret_cast<InodeNum*>(reply->tail_buf());
   buf[0] = 5;
@@ -322,7 +322,7 @@ TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
                       Return(true)));
 
-  resync_sender_->ReadResyncList(ds_tracker_);
+  resync_sender_->ReadResyncPhase(ds_tracker_);
 
   FIM_PTR<DSResyncReadyReplyFim> reply2 = DSResyncReadyReplyFim::MakePtr();
   EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
@@ -359,8 +359,8 @@ TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
 }
 
 TEST_F(DSResyncTest, ResyncSenderTwoFiles) {
-  FIM_PTR<DSResyncListReplyFim> reply =
-      DSResyncListReplyFim::MakePtr(2 * sizeof(InodeNum));
+  FIM_PTR<DSResyncPhaseReplyFim> reply =
+      DSResyncPhaseReplyFim::MakePtr(2 * sizeof(InodeNum));
   InodeNum* buf = reinterpret_cast<InodeNum*>(reply->tail_buf());
   buf[0] = 5;
   buf[1] = 10;
@@ -368,7 +368,7 @@ TEST_F(DSResyncTest, ResyncSenderTwoFiles) {
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
                       Return(true)));
 
-  resync_sender_->ReadResyncList(ds_tracker_);
+  resync_sender_->ReadResyncPhase(ds_tracker_);
 
   FIM_PTR<DSResyncReadyReplyFim> reply2 = DSResyncReadyReplyFim::MakePtr();
   EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
@@ -414,7 +414,8 @@ TEST_F(DSResyncTest, ResyncSenderListError1) {
   EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
       .WillOnce(Return(false));
 
-  EXPECT_THROW(resync_sender_->ReadResyncList(ds_tracker_), std::runtime_error);
+  EXPECT_THROW(resync_sender_->ReadResyncPhase(ds_tracker_),
+               std::runtime_error);
 }
 
 TEST_F(DSResyncTest, ResyncSenderListError2) {
@@ -424,7 +425,8 @@ TEST_F(DSResyncTest, ResyncSenderListError2) {
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
                       Return(true)));
 
-  EXPECT_THROW(resync_sender_->ReadResyncList(ds_tracker_), std::runtime_error);
+  EXPECT_THROW(resync_sender_->ReadResyncPhase(ds_tracker_),
+               std::runtime_error);
 }
 
 TEST_F(DSResyncTest, ResyncSenderReadyError1) {
@@ -530,17 +532,17 @@ TEST_F(DSResyncTest, ResyncFimProcessorDisabled) {
   ResultCodeReplyFim& dreply = dynamic_cast<ResultCodeReplyFim&>(*reply);
   EXPECT_EQ(EINVAL, int(dreply->err_no));
 
-  // Handling of DSResyncListFim
+  // Handling of DSResyncPhaseFim
   EXPECT_CALL(*fim_socket, WriteMsg(_))
       .WillOnce(SaveArg<0>(&reply));
 
-  FIM_PTR<DSResyncListFim> lfim = DSResyncListFim::MakePtr();
+  FIM_PTR<DSResyncPhaseFim> lfim = DSResyncPhaseFim::MakePtr();
   lfim->set_req_id(4);
   resync_fim_processor_->Process(lfim, fim_socket);
   ResultCodeReplyFim& lreply = dynamic_cast<ResultCodeReplyFim&>(*reply);
   EXPECT_EQ(EINVAL, int(lreply->err_no));
 
-  // Handling of DSResyncListFim
+  // Handling of DSResyncPhaseFim
   EXPECT_CALL(*fim_socket, WriteMsg(_))
       .WillOnce(SaveArg<0>(&reply));
 
@@ -568,7 +570,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorNoResyncFim) {
   InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id);
 
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i) {
-    DSResyncListReplyFim& fim = dynamic_cast<DSResyncListReplyFim&>(*fims[i]);
+    DSResyncPhaseReplyFim& fim = dynamic_cast<DSResyncPhaseReplyFim&>(*fims[i]);
     EXPECT_EQ(0U, fim.tail_buf_size());
   }
 }
@@ -655,7 +657,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorEarlyResyncEnd) {
       resync_fim_processor_->Process(rfim, fim_sockets[i]);
     }
 
-    FIM_PTR<IFim> efim = DSResyncListFim::MakePtr();
+    FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
     efim->set_req_id(++req_id);
     resync_fim_processor_->Process(efim, fim_sockets[i]);
   }
@@ -678,11 +680,11 @@ TEST_F(DSResyncTest, ResyncFimProcessorEarlyResyncEnd) {
   EXPECT_CALL(completion_handler_, Call(true));
 
 
-  FIM_PTR<IFim> efim = DSResyncListFim::MakePtr();
+  FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
   efim->set_req_id(++req_id);
   resync_fim_processor_->Process(efim, fim_sockets[kNumDSPerGroup - 2]);
-  DSResyncListReplyFim& lreply =
-      dynamic_cast<DSResyncListReplyFim&>(*(fims[kNumDSPerGroup - 2]));
+  DSResyncPhaseReplyFim& lreply =
+      dynamic_cast<DSResyncPhaseReplyFim&>(*(fims[kNumDSPerGroup - 2]));
   EXPECT_EQ(0U * sizeof(InodeNum), lreply.tail_buf_size());
 }
 
@@ -715,7 +717,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorCancelledContent) {
       std::memcpy(rfim->tail_buf(), "hello", 5);
       resync_fim_processor_->Process(rfim, fim_sockets[i]);
     }
-    FIM_PTR<IFim> efim = DSResyncListFim::MakePtr();
+    FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
     efim->set_req_id(++req_id);
     resync_fim_processor_->Process(efim, fim_sockets[i]);
   }
@@ -726,7 +728,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorCancelledContent) {
   EXPECT_CALL(*posix_fs_, Sync());
   EXPECT_CALL(completion_handler_, Call(true));
 
-  FIM_PTR<IFim> efim = DSResyncListFim::MakePtr();
+  FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
   efim->set_req_id(++req_id);
   resync_fim_processor_->Process(efim, fim_sockets[kNumDSPerGroup - 2]);
 }
@@ -764,7 +766,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorLateResyncEnd) {
   }
   // send list on sockets except 0, 1 and 2
   for (unsigned i = 3; i < kNumDSPerGroup - 1; ++i) {
-    FIM_PTR<IFim> efim = DSResyncListFim::MakePtr();
+    FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
     efim->set_req_id(++req_id);
     resync_fim_processor_->Process(efim, fim_sockets[i]);
   }
@@ -776,7 +778,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorLateResyncEnd) {
   EXPECT_CALL(*writer, Write(StartsWith("hello"), 5, kSegmentSize));
   EXPECT_CALL(*fim_sockets[1], WriteMsg(_));
 
-  FIM_PTR<IFim> efim = DSResyncListFim::MakePtr();
+  FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
   efim->set_req_id(++req_id);
   resync_fim_processor_->Process(efim, fim_sockets[0]);
 
@@ -787,7 +789,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorLateResyncEnd) {
   EXPECT_CALL(*writer2, Write(StartsWith("hello"), 5, kSegmentSize));
   EXPECT_CALL(*fim_sockets[2], WriteMsg(_));
 
-  resync_fim_processor_->Process(DSResyncListFim::MakePtr(),
+  resync_fim_processor_->Process(DSResyncPhaseFim::MakePtr(),
                                  fim_sockets[1]);
 
   // send list on socket 2, trigger full completion
@@ -796,7 +798,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorLateResyncEnd) {
   EXPECT_CALL(*posix_fs_, Sync());
   EXPECT_CALL(completion_handler_, Call(true));
 
-  resync_fim_processor_->Process(DSResyncListFim::MakePtr(),
+  resync_fim_processor_->Process(DSResyncPhaseFim::MakePtr(),
                                  fim_sockets[2]);
 }
 
@@ -830,7 +832,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorTooManySockets) {
       std::memcpy(rfim->tail_buf(), "hello", 5);
       resync_fim_processor_->Process(rfim, fim_sockets[i]);
     } else {
-      FIM_PTR<IFim> efim = DSResyncListFim::MakePtr();
+      FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
       efim->set_req_id(++req_id);
       resync_fim_processor_->Process(efim, fim_sockets[i]);
     }
@@ -843,7 +845,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorTooManySockets) {
   EXPECT_CALL(*writer, Write(StartsWith("hello"), 5, kSegmentSize));
   EXPECT_CALL(*fim_sockets[1], WriteMsg(_));
 
-  FIM_PTR<IFim> efim = DSResyncListFim::MakePtr();
+  FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
   efim->set_req_id(++req_id);
   resync_fim_processor_->Process(efim, fim_sockets[kNumDSPerGroup - 2]);
 
@@ -851,7 +853,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorTooManySockets) {
   fim_sockets[kNumDSPerGroup - 1].reset(new MockIFimSocket);
   EXPECT_CALL(completion_handler_, Call(false));
 
-  efim = DSResyncListFim::MakePtr();
+  efim = DSResyncPhaseFim::MakePtr();
   efim->set_req_id(++req_id);
   resync_fim_processor_->Process(efim, fim_sockets[kNumDSPerGroup - 1]);
 }
@@ -878,7 +880,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorOptResync) {
 
   // Send ListFim's
   for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i) {
-    FIM_PTR<DSResyncListFim> lfim = DSResyncListFim::MakePtr();
+    FIM_PTR<DSResyncPhaseFim> lfim = DSResyncPhaseFim::MakePtr();
     lfim->set_req_id(++req_id);
     resync_fim_processor_->Process(lfim, fim_sockets[i]);
   }
@@ -915,10 +917,10 @@ TEST_F(DSResyncTest, ResyncFimProcessorOptResync) {
     EXPECT_CALL(*fim_sockets[i], WriteMsg(_))
         .WillOnce(SaveArg<0>(&reply));
 
-  FIM_PTR<DSResyncListFim> lfim = DSResyncListFim::MakePtr();
+  FIM_PTR<DSResyncPhaseFim> lfim = DSResyncPhaseFim::MakePtr();
   lfim->set_req_id(++req_id);
   resync_fim_processor_->Process(lfim, fim_sockets[kNumDSPerGroup - 2]);
-  DSResyncListReplyFim& lreply = dynamic_cast<DSResyncListReplyFim&>(*reply);
+  DSResyncPhaseReplyFim& lreply = dynamic_cast<DSResyncPhaseReplyFim&>(*reply);
   EXPECT_EQ(3U * sizeof(InodeNum), lreply.tail_buf_size());
   InodeNum* inodes = reinterpret_cast<InodeNum*>(lreply.tail_buf());
   EXPECT_EQ(0x2BU, inodes[0]);
