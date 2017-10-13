@@ -103,6 +103,110 @@ class DSReplyOnExit : public BaseWorkerReplier {
   bool replicating_;  // Whether the operation is being replicated
 };
 
+/** Type for simple callback */
+typedef boost::function<void()> Callback;
+
+/**
+ * Type for the deferred callbacks to be called
+ */
+typedef boost::signals2::signal<void()> DeferCallbackSlots;
+
+class Worker;
+
+/**
+ * Manage deferment due to DS resync.
+ */
+class ResyncDeferment {
+ public:
+  /**
+   * Constructor
+   *
+   * @param worker The associated worker
+   */
+  explicit ResyncDeferment(Worker* worker)
+      : worker_(worker),
+        defer_all_fims_(false), all_defer_mgr_(MakeFimDeferMgr()) {}
+
+  /**
+   * Setup deferment to defer all Fims.
+   *
+   * @param sc_id The state change ID
+   */
+  void SetDeferAll(uint64_t sc_id) {
+    defer_all_fims_ = true;
+    defer_state_change_id_ = sc_id;
+  }
+
+  /**
+   * Reset the flag to defer all Fims.
+   *
+   * Run all callbacks, and process all Fims waiting for the deferment
+   * to be lifted.
+   *
+   * @param sc_id The state change ID, which must match the one kept
+   * in the deferment structure to be effective
+   */
+  void ResetDeferAll(uint64_t sc_id);
+
+  /**
+   * Check for and arrange deferment of a client Fim
+   *
+   * @param fim The Fim to check
+   *
+   * @param socket The client socket
+   *
+   * @return Whether the Fim needs to be deferred
+   */
+  bool CheckClientFim(const FIM_PTR<IFim>& fim,
+                      const boost::shared_ptr<IFimSocket>& socket) {
+    if (!defer_all_fims_)
+      return false;
+    all_defer_mgr_->AddFimEntry(fim, socket);
+    return true;
+  }
+
+  /**
+   * Check for and arrange deferment of a callback after Fim processing started
+   *
+   * @param callback The callback
+   *
+   * @return Whether the callback needs to be deferred
+   */
+  bool DeferCallback(Callback callback) {
+    if (!defer_all_fims_)
+      return false;
+    all_defer_released_.connect(callback);
+    return true;
+  }
+
+ private:
+  /** The associated worker */
+  Worker* worker_;
+  /**
+   * Use the worker-wide (rather than inode-wide) Fim deferring
+   * manager, which is triggered when the DSG is found to be
+   * recovering when a Fim needs to be processed.  When activated, all
+   * FC Fim processing are deferred.  To reset it, send a
+   * DeferResetFim to the worker (see below)
+   */
+  bool defer_all_fims_;
+  /**
+   * The state change ID triggering the last worker-wide Fim deferring
+   * mechanism.  This ensures that if the state change occurs again
+   * before the DeferResetFim is processed, the worker correctly stays
+   * deferring Fims
+   */
+  uint64_t defer_state_change_id_;
+  /**
+   * The worker-wide Fim deferring manager
+   */
+  boost::scoped_ptr<IFimDeferMgr> all_defer_mgr_;
+  /**
+   * Callbacks deferred while worker-wide Fim deferred
+   */
+  DeferCallbackSlots all_defer_released_;
+};
+
 /**
  * Implement the IFimProcessor interface for data server.
  */
@@ -110,6 +214,7 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
   // Allow casting from MemberFimProcessor<Worker> to Worker
   // within template MemberFimProcessor
   friend class MemberFimProcessor<Worker>;
+  friend class ResyncDeferment;
 
  public:
   Worker();
@@ -131,33 +236,8 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
                const boost::shared_ptr<IFimSocket>& socket);
 
  private:
-  /**
-   * Use the worker-wide (rather than inode-wide) Fim deferring
-   * manager, which is triggered when the DSG is found to be
-   * recovering when a Fim needs to be processed.  When activated, all
-   * FC Fim processing are deferred.  To reset it, send a
-   * DeferResetFim to the worker (see below)
-   */
-  bool defer_all_fims_;
-  /**
-   * The state change ID triggering the last worker-wide Fim deferring
-   * mechanism.  This ensures that if the state change occurs again
-   * before the DeferResetFim is processed, the worker correctly stays
-   * deferring Fims
-   */
-  uint64_t defer_state_change_id_;
-  /**
-   * Type for the deferred callbacks to be called
-   */
-  typedef boost::signals2::signal<void()> DeferCallbackSlots;
-  /**
-   * The worker-wide Fim deferring manager
-   */
-  boost::scoped_ptr<IFimDeferMgr> all_defer_mgr_;
-  /**
-   * Callbacks deferred while worker-wide Fim deferred
-   */
-  DeferCallbackSlots all_defer_released_;
+  /** How to handle deferments due to resync */
+  ResyncDeferment resync_deferment_;
   /**
    * Inode defer manager, used when an inode lock is request by the MS
    */
@@ -409,7 +489,25 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
   void DoDistressedWriteComplete(InodeNum inode, uint64_t segment);
 };
 
-Worker::Worker() : defer_all_fims_(false), all_defer_mgr_(MakeFimDeferMgr()),
+void ResyncDeferment::ResetDeferAll(uint64_t sc_id) {
+  if (sc_id < defer_state_change_id_)
+    return;
+  defer_all_fims_ = false;
+  if (!all_defer_released_.empty()) {
+    BOOST_SCOPE_EXIT(&all_defer_released_) {
+      all_defer_released_.disconnect_all_slots();
+    } BOOST_SCOPE_EXIT_END
+          all_defer_released_();
+  }
+  while (all_defer_mgr_->HasFimEntry()) {
+    DeferredFimEntry entry = all_defer_mgr_->GetNextFimEntry();
+    if (!worker_->Process_(entry.fim(), entry.socket()))
+      LOG(warning, Fim, "Unprocessed Fim ", PVal(entry.fim()),
+          " on DS worker unlock");
+  }
+}
+
+Worker::Worker() : resync_deferment_(this),
                    inode_defer_mgr_(MakeInodeFimDeferMgr()),
                    distressed_(false),
                    distress_defer_mgr_(MakeSegmentFimDeferMgr()) {
@@ -440,34 +538,16 @@ bool Worker::Process(const FIM_PTR<IFim>& fim,
   MUTEX_LOCK_SCOPE_LOG();
   uint64_t sc_id;
   GroupRole failed_role;
-  if (ds()->dsg_state(&sc_id, &failed_role) == kDSGRecovering) {
-    defer_all_fims_ = true;
-    defer_state_change_id_ = sc_id;
-  }
+  if (ds()->dsg_state(&sc_id, &failed_role) == kDSGRecovering)
+    resync_deferment_.SetDeferAll(sc_id);
   if (fim->type() == kDeferResetFim) {
     DeferResetFim& reset_fim = static_cast<DeferResetFim&>(*fim);
-    if (reset_fim->state_change_id < defer_state_change_id_)
-      return true;
-    defer_all_fims_ = false;
-    if (!all_defer_released_.empty()) {
-      BOOST_SCOPE_EXIT(&all_defer_released_) {
-        all_defer_released_.disconnect_all_slots();
-      } BOOST_SCOPE_EXIT_END
-      all_defer_released_();
-    }
-    while (all_defer_mgr_->HasFimEntry()) {
-      DeferredFimEntry entry = all_defer_mgr_->GetNextFimEntry();
-      if (!Process_(entry.fim(), entry.socket()))
-        LOG(warning, Fim, "Unprocessed Fim ", PVal(entry.fim()),
-            " on DS worker unlock");
-    }
+    resync_deferment_.ResetDeferAll(reset_fim->state_change_id);
     return true;
   }
-  if (defer_all_fims_ && socket &&
-      socket->GetReqTracker()->peer_client_num() != kNotClient) {
-    all_defer_mgr_->AddFimEntry(fim, socket);
+  if (socket && socket->GetReqTracker()->peer_client_num() != kNotClient &&
+      resync_deferment_.CheckClientFim(fim, socket))
     return true;
-  }
   return Process_(fim, socket);
 }
 
@@ -512,11 +592,9 @@ bool Worker::HandleDSInodeLock(const FIM_PTR<DSInodeLockFim>& fim,
 
 void Worker::DSInodeUnlock(InodeNum inode) {
   ds()->tracer()->Log(__func__, inode, kNotClient);
-  if (defer_all_fims_) {
-    all_defer_released_.connect(
-        boost::bind(&Worker::DSInodeUnlock, this, inode));
+  if (resync_deferment_.DeferCallback(
+          boost::bind(&Worker::DSInodeUnlock, this, inode)))
     return;
-  }
   std::vector<DeferredFimEntry> entries;
   while (inode_defer_mgr_->HasFimEntry(inode))
     entries.push_back(inode_defer_mgr_->GetNextFimEntry(inode));
@@ -736,12 +814,10 @@ bool Worker::HandleDistressedWriteCompletion(
 }
 
 void Worker::DoDistressedWriteComplete(InodeNum inode, uint64_t segment) {
-  if (defer_all_fims_) {
-    LOG(debug, Fim, "Deferring FIM processing while DS recovery in progress");
-    all_defer_released_.connect(
-        boost::bind(&Worker::DoDistressedWriteComplete, this, inode, segment));
+  if (resync_deferment_.DeferCallback(
+          boost::bind(&Worker::DoDistressedWriteComplete,
+                      this, inode, segment)))
     return;
-  }
   if (inode_defer_mgr_->IsLocked(inode)) {
     LOG(debug, Fim, "Deferring FIM processing while inode is being locked");
     inode_defer_released_[inode].connect(
