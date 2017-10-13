@@ -20,7 +20,6 @@
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
 #include <boost/make_shared.hpp>
-#include <boost/scope_exit.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/signals2.hpp>
@@ -125,28 +124,17 @@ class ResyncDeferment {
    */
   explicit ResyncDeferment(Worker* worker)
       : worker_(worker),
-        defer_all_fims_(false), all_defer_mgr_(MakeFimDeferMgr()) {}
+        defer_all_fims_(false), all_defer_mgr_(MakeFimDeferMgr()),
+        all_defer_released_(new DeferCallbackSlots) {}
 
   /**
-   * Setup deferment to defer all Fims.
+   * Refetch the current state and retry all pending actions.
    *
-   * @param sc_id The state change ID
+   * Once the current state is updated, it runs all callbacks and then
+   * processes all pending Fims.  The spaces are emptied first, so
+   * that these actions can enter callback again.
    */
-  void SetDeferAll(uint64_t sc_id) {
-    defer_all_fims_ = true;
-    defer_state_change_id_ = sc_id;
-  }
-
-  /**
-   * Reset the flag to defer all Fims.
-   *
-   * Run all callbacks, and process all Fims waiting for the deferment
-   * to be lifted.
-   *
-   * @param sc_id The state change ID, which must match the one kept
-   * in the deferment structure to be effective
-   */
-  void ResetDeferAll(uint64_t sc_id);
+  void ResetDefer();
 
   /**
    * Check for and arrange deferment of a client Fim
@@ -159,6 +147,7 @@ class ResyncDeferment {
    */
   bool CheckClientFim(const FIM_PTR<IFim>& fim,
                       const boost::shared_ptr<IFimSocket>& socket) {
+    UpdateStates(false);
     if (!defer_all_fims_)
       return false;
     all_defer_mgr_->AddFimEntry(fim, socket);
@@ -175,7 +164,7 @@ class ResyncDeferment {
   bool DeferCallback(Callback callback) {
     if (!defer_all_fims_)
       return false;
-    all_defer_released_.connect(callback);
+    all_defer_released_->connect(callback);
     return true;
   }
 
@@ -191,20 +180,26 @@ class ResyncDeferment {
    */
   bool defer_all_fims_;
   /**
-   * The state change ID triggering the last worker-wide Fim deferring
-   * mechanism.  This ensures that if the state change occurs again
-   * before the DeferResetFim is processed, the worker correctly stays
-   * deferring Fims
-   */
-  uint64_t defer_state_change_id_;
-  /**
    * The worker-wide Fim deferring manager
    */
   boost::scoped_ptr<IFimDeferMgr> all_defer_mgr_;
   /**
    * Callbacks deferred while worker-wide Fim deferred
    */
-  DeferCallbackSlots all_defer_released_;
+  boost::scoped_ptr<DeferCallbackSlots> all_defer_released_;
+
+  /**
+   * Update states from the current DS.
+   *
+   * Normally this will only increases the stuff to defer.  If "reset"
+   * is given, it will clear previous deferment records first, so that
+   * previous deferments are removed.  The handling of Fims and
+   * callbacks are not dealt with here, and must be handled by the
+   * caller.
+   *
+   * @param reset Whether to reset to DS state
+   */
+  void UpdateStates(bool reset);
 };
 
 /**
@@ -489,22 +484,34 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
   void DoDistressedWriteComplete(InodeNum inode, uint64_t segment);
 };
 
-void ResyncDeferment::ResetDeferAll(uint64_t sc_id) {
-  if (sc_id < defer_state_change_id_)
+void ResyncDeferment::ResetDefer() {
+  UpdateStates(true);
+  if (defer_all_fims_)
     return;
-  defer_all_fims_ = false;
-  if (!all_defer_released_.empty()) {
-    BOOST_SCOPE_EXIT(&all_defer_released_) {
-      all_defer_released_.disconnect_all_slots();
-    } BOOST_SCOPE_EXIT_END
-          all_defer_released_();
-  }
-  while (all_defer_mgr_->HasFimEntry()) {
-    DeferredFimEntry entry = all_defer_mgr_->GetNextFimEntry();
+  // Pick up deferred works to do
+  boost::scoped_ptr<DeferCallbackSlots> my_slots(new DeferCallbackSlots);
+  my_slots.swap(all_defer_released_);
+  std::vector<DeferredFimEntry> deferred_entries;
+  while (all_defer_mgr_->HasFimEntry())
+    deferred_entries.push_back(all_defer_mgr_->GetNextFimEntry());
+  // Run deferred works
+  (*my_slots)();
+  my_slots->disconnect_all_slots();
+  BOOST_FOREACH(DeferredFimEntry& entry,  // NOLINT(runtime/references)
+                deferred_entries) {
     if (!worker_->Process_(entry.fim(), entry.socket()))
       LOG(warning, Fim, "Unprocessed Fim ", PVal(entry.fim()),
           " on DS worker unlock");
   }
+}
+
+void ResyncDeferment::UpdateStates(bool reset) {
+  if (reset)
+    defer_all_fims_ = false;
+  uint64_t sc_id;
+  GroupRole failed_role;
+  if (worker_->ds()->dsg_state(&sc_id, &failed_role) == kDSGRecovering)
+    defer_all_fims_ = true;
 }
 
 Worker::Worker() : resync_deferment_(this),
@@ -536,13 +543,8 @@ bool Worker::Process(const FIM_PTR<IFim>& fim,
   boost::shared_lock<boost::shared_mutex> lock;
   ds()->ReadLockDSGState(&lock);
   MUTEX_LOCK_SCOPE_LOG();
-  uint64_t sc_id;
-  GroupRole failed_role;
-  if (ds()->dsg_state(&sc_id, &failed_role) == kDSGRecovering)
-    resync_deferment_.SetDeferAll(sc_id);
   if (fim->type() == kDeferResetFim) {
-    DeferResetFim& reset_fim = static_cast<DeferResetFim&>(*fim);
-    resync_deferment_.ResetDeferAll(reset_fim->state_change_id);
+    resync_deferment_.ResetDefer();
     return true;
   }
   if (socket && socket->GetReqTracker()->peer_client_num() != kNotClient &&
