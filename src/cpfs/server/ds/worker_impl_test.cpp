@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
@@ -227,9 +228,82 @@ TEST_F(DSWorkerTest, WorkerDefer) {
 
   worker_->Process(cs_fim, d_fim_socket_);
 
+  // Defer reset Fims when DSG state not yet changed
+  FIM_PTR<DeferResetFim> reset_fim = DeferResetFim::MakePtr();
+  worker_->Process(reset_fim, m_fim_socket_);
+
+  // Ready again, but still queueing Fims
+  data_server_.set_dsg_state(3, kDSGReady, 0);
+  FIM_PTR<OpenFim> o_fim(new OpenFim);
+  (*o_fim)->inode = 132;
+  worker_->Process(o_fim, c_fim_socket_);
+
+  // Defer reset Fims after DSG state changed
+  MockLogCallback mock_log_callback;
+  LogRoute log_route(mock_log_callback.GetLogCallback());
+  PrepareCalls(1, 132);
+  EXPECT_CALL(*store_, Read(132, false, 100, _, 8))
+      .WillOnce(Return(0));
+  EXPECT_CALL(*c_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*cache_tracker_, SetCache(132, 7));
+  EXPECT_CALL(mock_log_callback,
+              Call(PLEVEL(warning, Fim),
+                   StartsWith("Unprocessed Fim "),
+                   _));
+
+  worker_->Process(reset_fim, m_fim_socket_);
+}
+
+TEST_F(DSWorkerTest, WorkerDeferInode) {
+  // Set recovering state
+  data_server_.set_dsg_state(2, kDSGResync, 2);
+  std::vector<InodeNum> resyncing;
+  resyncing.push_back(132);
+  data_server_.set_dsg_inodes_resyncing(resyncing);
+
+  // Client initiated Fims processing of that inode will be suspended
+  FIM_PTR<ReadFim> fim(new ReadFim);
+  (*fim)->inode = 132;
+  (*fim)->dsg_off = 100;
+  (*fim)->size = 8;
+  (*fim)->checksum_role = 2;
+
+  worker_->Process(fim, c_fim_socket_);
+
+  // Client initiated Fims processing of other inode is not affected
+  PrepareCalls(1, 133);
+  EXPECT_CALL(*store_, Read(133, false, 100, _, 8))
+      .WillOnce(Return(0));
+  EXPECT_CALL(*c_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*cache_tracker_, SetCache(133, 7));
+
+  FIM_PTR<ReadFim> fim2(new ReadFim);
+  (*fim2)->inode = 133;
+  (*fim2)->dsg_off = 100;
+  (*fim2)->size = 8;
+  (*fim2)->checksum_role = 2;
+
+  worker_->Process(fim2, c_fim_socket_);
+
+  // DS-initiated Fims processing will continue as usual
+  FIM_PTR<ChecksumUpdateFim> cs_fim(new ChecksumUpdateFim(6));
+  (*cs_fim)->inode = 132;
+  (*cs_fim)->dsg_off = 100;
+  (*cs_fim)->last_off = 1000;
+  std::memcpy(cs_fim->tail_buf(), "abcde", 6);
+  EXPECT_CALL(*rec_mgr_, GetHandle(132, 0, false))
+      .WillOnce(Return(boost::shared_ptr<IDataRecoveryHandle>()));
+  PrepareCalls(1, 132);
+  EXPECT_CALL(*store_, ApplyDelta(132, Ref((*cs_fim)->optime), 1000, 100,
+                                  cs_fim->tail_buf(), 6, true));
+  FIM_PTR<IFim> reply;
+  EXPECT_CALL(*d_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&reply));
+
+  worker_->Process(cs_fim, d_fim_socket_);
+
   // Old defer reset Fims gets ignored
   FIM_PTR<DeferResetFim> reset_fim = DeferResetFim::MakePtr();
-  (*reset_fim)->state_change_id = 1;
   worker_->Process(reset_fim, m_fim_socket_);
 
   // Ready again, but still queueing Fims
@@ -251,7 +325,6 @@ TEST_F(DSWorkerTest, WorkerDefer) {
                    StartsWith("Unprocessed Fim "),
                    _));
 
-  (*reset_fim)->state_change_id = 2;
   worker_->Process(reset_fim, m_fim_socket_);
 }
 
@@ -395,7 +468,10 @@ TEST_F(DSWorkerTest, WriteFimDegradeWrite) {
                                   100, Eq(ByRef(wcbuf)), 6, true))
       .WillOnce(Return(0));
 
-  data_server_.set_dsg_state(2, kDSGDegraded, 0);
+  data_server_.set_dsg_state(2, kDSGResync, 0);
+  boost::unordered_set<InodeNum> to_resync;
+  to_resync.insert(132);
+  data_server_.set_dsg_inodes_to_resync(&to_resync);
   worker_->Process(fim, c_fim_socket_);
   EXPECT_TRUE(reply->is_final());
   ResultCodeReplyFim& rreply = dynamic_cast<ResultCodeReplyFim&>(*reply);
@@ -757,7 +833,6 @@ TEST_F(DSWorkerTest, DistressedWriteInodeLockUnlock) {
 
   data_server_.set_dsg_state(1, kDSGReady, 0);
   FIM_PTR<DeferResetFim> reset_fim = DeferResetFim::MakePtr();
-  (*reset_fim)->state_change_id = 1;
   worker_->Process(reset_fim, m_fim_socket_);
 }
 

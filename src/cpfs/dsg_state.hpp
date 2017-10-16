@@ -25,7 +25,8 @@ enum DSGroupState {
   kDSGDegraded, /**< All DS has been assigned, one is lost */
   kDSGRecovering, /**< All DS has been assigned, one is recovering */
   kDSGFailed, /**< All DS has been assigned, multiple are lost */
-  kDSGShuttingDown /**< All DS are shutting down */
+  kDSGShuttingDown, /**< All DS are shutting down */
+  kDSGResync, /**< DS is serving request while resync is in progress */
 };
 
 /**
@@ -42,7 +43,8 @@ inline const char* ToStr(DSGroupState state) {
     "Degraded",
     "Recovering",
     "Failed",
-    "Shutting Down"
+    "Shutting Down",
+    "Data Resync",
   };
   if (std::size_t(state) >= (sizeof(state_map) / sizeof(state_map[0])))
     return "Unknown";

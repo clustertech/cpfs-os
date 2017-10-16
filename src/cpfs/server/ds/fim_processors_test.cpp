@@ -343,10 +343,9 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeFromRecovering) {
   (*fim)->distress = 0;
   ms_ctrl_fim_proc_->Process(fim, fim_socket);
   DSGDistressModeChangeFim& rfim1 =
-      static_cast<DSGDistressModeChangeFim&>(*fim1);
+      dynamic_cast<DSGDistressModeChangeFim&>(*fim1);
   EXPECT_EQ(0U, rfim1->distress);
-  DeferResetFim& rfim2 = static_cast<DeferResetFim&>(*fim2);
-  EXPECT_EQ(7U, rfim2->state_change_id);
+  dynamic_cast<DeferResetFim&>(*fim2);
 }
 
 TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeShuttingDown) {

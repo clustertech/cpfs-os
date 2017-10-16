@@ -152,11 +152,8 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
                              (*fim)->failed, &lock);
       MUTEX_LOCK_SCOPE_LOG();
       // Reset Fim deferring, but only after DSG state unique lock is acquired
-      if (old_state == kDSGRecovering && (*fim)->state != kDSGRecovering) {
-        FIM_PTR<DeferResetFim> reset_fim = DeferResetFim::MakePtr();
-        (*reset_fim)->state_change_id = (*fim)->state_change_id;
-        server_->thread_group()->EnqueueAll(reset_fim);
-      }
+      if (old_state == kDSGRecovering && (*fim)->state != kDSGRecovering)
+        server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
       if ((*fim)->state == kDSGReady) {
         server_->inode_removal_tracker()->SetPersistRemoved(false);
         server_->durable_range()->SetConservative(false);

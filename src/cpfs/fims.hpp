@@ -448,10 +448,7 @@ DEFINE_FIM_CLASS_STRUCT(11, RecoveryDataFim, 0) {
  * Fim part for resetting Fim defer manager.  This is an internal Fim
  * used by DS to reset the defer state.
  */
-DEFINE_FIM_CLASS_STRUCT(12, DeferResetFim, 0) {
-  uint64_t state_change_id; /**< State change ID triggering the Fim */
-  FIM_STRUCT_END(12, DeferResetFim, 0);
-};
+DEFINE_FIM_CLASS_VOID(12, DeferResetFim, 0);
 
 /**
  * Fim part for connection initiator to send a challenge to initiate

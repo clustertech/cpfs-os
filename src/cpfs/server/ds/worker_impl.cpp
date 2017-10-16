@@ -25,6 +25,7 @@
 #include <boost/signals2.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <boost/unordered_map.hpp>
+#include <boost/unordered_set.hpp>
 
 #include "common.hpp"
 #include "ds_iface.hpp"
@@ -102,6 +103,11 @@ class DSReplyOnExit : public BaseWorkerReplier {
   bool replicating_;  // Whether the operation is being replicated
 };
 
+/** Find inode number stored in a Fim */
+InodeNum FimInodeNum(const FIM_PTR<IFim>& fim) {
+  return reinterpret_cast<InodeNum&>(*(fim->body()));
+}
+
 /** Type for simple callback */
 typedef boost::function<void()> Callback;
 
@@ -124,8 +130,8 @@ class ResyncDeferment {
    */
   explicit ResyncDeferment(Worker* worker)
       : worker_(worker),
-        defer_all_fims_(false), all_defer_mgr_(MakeFimDeferMgr()),
-        all_defer_released_(new DeferCallbackSlots) {}
+        defer_all_fims_(false), defer_mgr_(MakeFimDeferMgr()),
+        defer_released_(new DeferCallbackSlots) {}
 
   /**
    * Refetch the current state and retry all pending actions.
@@ -137,7 +143,10 @@ class ResyncDeferment {
   void ResetDefer();
 
   /**
-   * Check for and arrange deferment of a client Fim
+   * Defer a client Fim if necessary.
+   *
+   * The caller should have acquired the DSG info read lock before
+   * calling this.
    *
    * @param fim The Fim to check
    *
@@ -145,26 +154,30 @@ class ResyncDeferment {
    *
    * @return Whether the Fim needs to be deferred
    */
-  bool CheckClientFim(const FIM_PTR<IFim>& fim,
-                      const boost::shared_ptr<IFimSocket>& socket) {
-    UpdateStates(false);
-    if (!defer_all_fims_)
+  bool ProcessFimDefer(const FIM_PTR<IFim>& fim,
+                       const boost::shared_ptr<IFimSocket>& socket) {
+    if (!InodeNeedDefer(FimInodeNum(fim)))
       return false;
-    all_defer_mgr_->AddFimEntry(fim, socket);
+    defer_mgr_->AddFimEntry(fim, socket);
     return true;
   }
 
   /**
-   * Check for and arrange deferment of a callback after Fim processing started
+   * Defer a callback if necessary.
+   *
+   * The caller should have acquired the DSG info read lock before
+   * calling this.
+   *
+   * @param inode The inode being operated
    *
    * @param callback The callback
    *
    * @return Whether the callback needs to be deferred
    */
-  bool DeferCallback(Callback callback) {
-    if (!defer_all_fims_)
+  bool ProcessCallbackDefer(InodeNum inode, Callback callback) {
+    if (!InodeNeedDefer(inode))
       return false;
-    all_defer_released_->connect(callback);
+    defer_released_->connect(callback);
     return true;
   }
 
@@ -180,26 +193,43 @@ class ResyncDeferment {
    */
   bool defer_all_fims_;
   /**
-   * The worker-wide Fim deferring manager
+   * Inodes currently being deferred.  This may contains a set
+   * different from the list in the DSG states, because a deferment is
+   * discovered only by ProcessFimDefer(), and because a deferment
+   * needs to be maintained until it is reset by ResetDefer().
    */
-  boost::scoped_ptr<IFimDeferMgr> all_defer_mgr_;
+  boost::unordered_set<InodeNum> inodes_deferred_;
   /**
-   * Callbacks deferred while worker-wide Fim deferred
+   * The Fim deferring manager to hold Fims
    */
-  boost::scoped_ptr<DeferCallbackSlots> all_defer_released_;
+  boost::scoped_ptr<IFimDeferMgr> defer_mgr_;
+  /**
+   * Callbacks to run upon lifting of deferment
+   */
+  boost::scoped_ptr<DeferCallbackSlots> defer_released_;
 
   /**
-   * Update states from the current DS.
+   * Update the defer_all_fims_ flag.
    *
-   * Normally this will only increases the stuff to defer.  If "reset"
-   * is given, it will clear previous deferment records first, so that
-   * previous deferments are removed.  The handling of Fims and
-   * callbacks are not dealt with here, and must be handled by the
-   * caller.
-   *
-   * @param reset Whether to reset to DS state
+   * @param state_ret Whether to put the DSG state found, skip if 0
    */
-  void UpdateStates(bool reset);
+  void UpdateDeferAll(DSGroupState* state_ret);
+
+  /**
+   * Check whether access to an inode needs to be deferred.
+   *
+   * This updates the internal states so that if an inode needs to be
+   * deferred, further access to the same inode before a ResetDefer()
+   * will also be deferred.
+   *
+   * The caller should have acquired the DSG info read lock before
+   * calling this.
+   *
+   * @param inode The inode to check
+   *
+   * @return Whether the inode access should be deferred
+   */
+  bool InodeNeedDefer(InodeNum inode);
 };
 
 /**
@@ -304,17 +334,17 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
     return ds()->store()->ds_role();
   }
 
-  bool IsDSGDegraded(GroupRole* failed_ret) {
+  bool IsDSGDegraded(GroupRole* failed_ret, InodeNum inode) {
     uint64_t state_change_id;
-    return ds()->dsg_state(&state_change_id, failed_ret) == kDSGDegraded;
+    DSGroupState state = ds()->dsg_state(&state_change_id, failed_ret);
+    if (state == kDSGDegraded)
+      return true;
+    return state == kDSGResync && ds()->is_inode_to_resync(inode);
   }
 
-  bool IsDSFailed(GroupRole role) {
-    uint64_t state_change_id;
+  bool IsDSFailed(GroupRole role, InodeNum inode) {
     GroupRole failed;
-    if (ds()->dsg_state(&state_change_id, &failed) != kDSGDegraded)
-      return false;
-    return failed == role;
+    return IsDSGDegraded(&failed, inode) && failed == role;
   }
 
   /**
@@ -347,7 +377,7 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
                          cache_handle_ret) {
     if (GetRole() == checksum_role) {
       GroupRole failed;
-      if (!IsDSGDegraded(&failed) || failed != target_role) {
+      if (!IsDSGDegraded(&failed, inode) || failed != target_role) {
         LOG(informational, Degraded, "Inappropriate degraded msg, ", PVal(fim));
         FIM_PTR<NotDegradedFim> redirect_req =
             NotDegradedFim::MakePtr();
@@ -485,33 +515,54 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
 };
 
 void ResyncDeferment::ResetDefer() {
-  UpdateStates(true);
+  defer_all_fims_ = false;
+  inodes_deferred_.clear();
+  UpdateDeferAll(0);
   if (defer_all_fims_)
     return;
   // Pick up deferred works to do
   boost::scoped_ptr<DeferCallbackSlots> my_slots(new DeferCallbackSlots);
-  my_slots.swap(all_defer_released_);
+  my_slots.swap(defer_released_);
   std::vector<DeferredFimEntry> deferred_entries;
-  while (all_defer_mgr_->HasFimEntry())
-    deferred_entries.push_back(all_defer_mgr_->GetNextFimEntry());
+  while (defer_mgr_->HasFimEntry())
+    deferred_entries.push_back(defer_mgr_->GetNextFimEntry());
   // Run deferred works
   (*my_slots)();
   my_slots->disconnect_all_slots();
   BOOST_FOREACH(DeferredFimEntry& entry,  // NOLINT(runtime/references)
                 deferred_entries) {
-    if (!worker_->Process_(entry.fim(), entry.socket()))
-      LOG(warning, Fim, "Unprocessed Fim ", PVal(entry.fim()),
-          " on DS worker unlock");
+    if (!ProcessFimDefer(entry.fim(), entry.socket()))
+      if (!worker_->Process_(entry.fim(), entry.socket()))
+        LOG(warning, Fim, "Unprocessed Fim ", PVal(entry.fim()),
+            " on DS worker unlock");
   }
 }
 
-void ResyncDeferment::UpdateStates(bool reset) {
-  if (reset)
-    defer_all_fims_ = false;
+void ResyncDeferment::UpdateDeferAll(DSGroupState* state_ret) {
   uint64_t sc_id;
   GroupRole failed_role;
-  if (worker_->ds()->dsg_state(&sc_id, &failed_role) == kDSGRecovering)
+  DSGroupState state;
+  if (!state_ret)
+    state_ret = &state;
+  *state_ret = worker_->ds()->dsg_state(&sc_id, &failed_role);
+  if (*state_ret == kDSGRecovering)
     defer_all_fims_ = true;
+}
+
+bool ResyncDeferment::InodeNeedDefer(InodeNum inode) {
+  if (defer_all_fims_)
+    return true;
+  DSGroupState state;
+  UpdateDeferAll(&state);
+  if (defer_all_fims_)
+    return true;
+  if (inodes_deferred_.find(inode) != inodes_deferred_.end())
+    return true;
+  if (state == kDSGResync && worker_->ds()->is_inode_resyncing(inode)) {
+    inodes_deferred_.insert(inode);
+    return true;
+  }
+  return false;
 }
 
 Worker::Worker() : resync_deferment_(this),
@@ -548,7 +599,7 @@ bool Worker::Process(const FIM_PTR<IFim>& fim,
     return true;
   }
   if (socket && socket->GetReqTracker()->peer_client_num() != kNotClient &&
-      resync_deferment_.CheckClientFim(fim, socket))
+      resync_deferment_.ProcessFimDefer(fim, socket))
     return true;
   return Process_(fim, socket);
 }
@@ -556,7 +607,7 @@ bool Worker::Process(const FIM_PTR<IFim>& fim,
 bool Worker::Process_(const FIM_PTR<IFim>& fim,
                       const boost::shared_ptr<IFimSocket>& socket) {
   if (fim->type() >= kMinReqReplyFimType) {
-    InodeNum inode = reinterpret_cast<InodeNum&>(*(fim->body()));
+    InodeNum inode = FimInodeNum(fim);
     if (inode_defer_mgr_->IsLocked(inode) && socket &&
         socket->GetReqTracker()->peer_client_num() != kNotClient) {
       LOG(debug, FS, "Deferring processing for ", PVal(fim));
@@ -594,8 +645,8 @@ bool Worker::HandleDSInodeLock(const FIM_PTR<DSInodeLockFim>& fim,
 
 void Worker::DSInodeUnlock(InodeNum inode) {
   ds()->tracer()->Log(__func__, inode, kNotClient);
-  if (resync_deferment_.DeferCallback(
-          boost::bind(&Worker::DSInodeUnlock, this, inode)))
+  if (resync_deferment_.ProcessCallbackDefer(
+          inode, boost::bind(&Worker::DSInodeUnlock, this, inode)))
     return;
   std::vector<DeferredFimEntry> entries;
   while (inode_defer_mgr_->HasFimEntry(inode))
@@ -696,7 +747,7 @@ bool Worker::DoWrite(const FIM_PTR<WriteFim>& fim,
   // Invalidate cache for others, set cache for writing client
   NotifyFCOnWrite(inode, peer);
   // Send checksum change request
-  if (IsDSFailed((*fim)->checksum_role))
+  if (IsDSFailed((*fim)->checksum_role, inode))
     return true;
   (*update_fim)->inode = inode;
   (*update_fim)->optime = (*fim)->optime;
@@ -816,9 +867,9 @@ bool Worker::HandleDistressedWriteCompletion(
 }
 
 void Worker::DoDistressedWriteComplete(InodeNum inode, uint64_t segment) {
-  if (resync_deferment_.DeferCallback(
-          boost::bind(&Worker::DoDistressedWriteComplete,
-                      this, inode, segment)))
+  if (resync_deferment_.ProcessCallbackDefer(
+          inode, boost::bind(&Worker::DoDistressedWriteComplete,
+                             this, inode, segment)))
     return;
   if (inode_defer_mgr_->IsLocked(inode)) {
     LOG(debug, Fim, "Deferring FIM processing while inode is being locked");
@@ -986,7 +1037,7 @@ boost::shared_ptr<IDegradedCacheHandle> Worker::DoReqRecovery(
       ++r;
       if (r == kNumDSPerGroup)
         r = 0;
-      if (!IsDSFailed(r)) {
+      if (!IsDSFailed(r, inode)) {
         FIM_PTR<DataRecoveryFim> recovery_fim = DataRecoveryFim::MakePtr();
         (*recovery_fim)->inode = inode;
         (*recovery_fim)->dsg_off = recovery_off;
@@ -1085,7 +1136,7 @@ bool Worker::HandleTruncateData(
   replier->SetResult(result);
   if (result == 0) {
     cache_invalidator_.InvalidateClients((*fim)->inode, true, kNotClient);
-    if (size == 0 || IsDSFailed((*fim)->checksum_role))
+    if (size == 0 || IsDSFailed((*fim)->checksum_role, (*fim)->inode))
       return true;
     (*update_fim)->inode = (*fim)->inode;
     (*update_fim)->optime = (*fim)->optime;
