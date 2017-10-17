@@ -90,23 +90,7 @@ struct DSGroup {
    * Update the current state after a topology change event.
    */
   void UpdateState() {
-    int num_open = 0, num_missing = 0;
-    GroupRole new_failed = 0;
-    for (GroupRole r = 0; r < kNumDSPerGroup; ++r) {
-      if (ds_infos[r].ip == 0) {
-        ++num_open;
-      } else if (ds_infos[r].port == 0) {
-        new_failed = r;
-        ++num_missing;
-      }
-    }
-    DSGroupState new_state = NextState(num_open, num_missing, new_failed);
-    if (state != new_state || (state == kDSGDegraded && failed != new_failed)) {
-      state = new_state;
-      if (state == kDSGDegraded)
-        failed = new_failed;
-      ++state_change_id;
-    }
+    DoUpdateState(false);
   }
 
   /**
@@ -120,6 +104,7 @@ struct DSGroup {
     if (state != kDSGRecovering || failed != role)
       return false;
     state = kDSGReady;
+    failed = kNumDSPerGroup;
     ++state_change_id;
     return true;
   }
@@ -164,33 +149,46 @@ struct DSGroup {
    * group has previously been started already)
    */
   bool ForceStart() {
-    GroupRole num_missing = 0;
-    GroupRole missing = 0;
-    for (GroupRole r = 0; r < kNumDSPerGroup; ++r) {
-      if (ds_infos[r].port == 0) {
-        ++num_missing;
-        missing = r;
-      }
-    }
-    if (state != kDSGPending || num_missing != 1)
+    if (state != kDSGPending)
       return false;
-    state = kDSGDegraded;
-    failed = missing;
-    ++state_change_id;
-    return true;
+    return DoUpdateState(true);
   }
 
  private:
-  DSGroupState NextState(int num_open, int num_missing, GroupRole new_failed) {
+  bool DoUpdateState(bool lenient) {
+    GroupRole new_failed;
+    DSGroupState new_state = NextState(lenient, &new_failed);
+    if (state != new_state || (state == kDSGDegraded && failed != new_failed)) {
+      state = new_state;
+      if (state != kDSGRecovering)
+        failed = new_failed;
+      ++state_change_id;
+      return true;
+    }
+    return false;
+  }
+
+  DSGroupState NextState(bool lenient_open, GroupRole* failed_ret) {
+    int num_open = 0, num_missing = 0;
+    *failed_ret = kNumDSPerGroup;
+    for (GroupRole r = 0; r < kNumDSPerGroup; ++r) {
+      if (ds_infos[r].ip == 0) {
+        ++num_open;
+      } else if (ds_infos[r].port == 0) {
+        *failed_ret = r;
+        ++num_missing;
+      }
+    }
     if (state == kDSGFailed || num_missing > 1)
       return kDSGFailed;
-    if (num_open > 0)
+    if (num_open > 1 || (!lenient_open && num_open > 0))
       return kDSGPending;
     if (num_missing == 0)
-      return state == kDSGPending ? kDSGReady : kDSGRecovering;
-    else  // num_missing == 1
-      return state == kDSGReady || new_failed == failed ?
-          kDSGDegraded : kDSGFailed;
+      return state == kDSGPending || state == kDSGReady
+          ? kDSGReady : kDSGRecovering;
+    // num_missing == 1
+    return state == kDSGReady || *failed_ret == failed ?
+        kDSGDegraded : kDSGFailed;
   }
 };
 
