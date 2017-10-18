@@ -30,6 +30,7 @@
 #include "logger.hpp"
 #include "mock_actions.hpp"
 #include "posix_fs_mock.hpp"
+#include "req_completion_mock.hpp"
 #include "req_entry.hpp"
 #include "req_tracker_mock.hpp"
 #include "shaped_sender.hpp"
@@ -41,12 +42,14 @@
 #include "server/ds/store_mock.hpp"
 #include "server/durable_range_mock.hpp"
 #include "server/inode_removal_tracker_mock.hpp"
+#include "server/thread_group_mock.hpp"
 
 using ::testing::_;
 using ::testing::DoAll;
 using ::testing::DoDefault;
 using ::testing::Expectation;
 using ::testing::Invoke;
+using ::testing::InvokeArgument;
 using ::testing::Mock;
 using ::testing::MockFunction;
 using ::testing::Return;
@@ -69,10 +72,12 @@ class DSResyncTest : public ::testing::Test {
   MockBaseDataServer server_;
   boost::scoped_ptr<IResyncSender> resync_sender_;
   boost::scoped_ptr<IResyncMgr> resync_mgr_;
+  MockIThreadGroup* thread_group_;
   MockIPosixFS* posix_fs_;
   MockIInodeRemovalTracker* inode_removal_tracker_;
   MockIDurableRange* durable_range_;
   MockIStore* store_;
+  MockIReqCompletionCheckerSet* req_completion_checker_set_;
   MockFunction<void(bool success)> completion_handler_;
   boost::scoped_ptr<IResyncFimProcessor> resync_fim_processor_;
   MockITrackerMapper* tracker_mapper_;
@@ -88,11 +93,14 @@ class DSResyncTest : public ::testing::Test {
     resync_sender_->SetShapedSenderMaker(s_sender_maker_.GetMaker());
     resync_mgr_->SetResyncSenderMaker(sender_maker_.GetMaker());
     resync_mgr_->SetShapedSenderMaker(s_sender_maker_.GetMaker());
+    server_.set_thread_group(thread_group_ = new MockIThreadGroup);
     server_.set_posix_fs(posix_fs_ = new MockIPosixFS);
     server_.set_inode_removal_tracker(
         inode_removal_tracker_ = new MockIInodeRemovalTracker);
     server_.set_durable_range(durable_range_ = new MockIDurableRange);
     server_.set_store(store_);
+    server_.set_req_completion_checker_set(
+        req_completion_checker_set_ = new MockIReqCompletionCheckerSet);
     server_.set_tracker_mapper(tracker_mapper_ = new MockITrackerMapper);
     server_.set_dsg_ready_time_keeper(
         dsg_ready_time_keeper_ = new MockITimeKeeper);
@@ -188,6 +196,10 @@ TEST_F(DSResyncTest, ResyncSenderFlow) {
       DSResyncListReplyFim::MakePtr(sizeof(InodeNum));
   (*reply)->num_inode = 1;
   reinterpret_cast<InodeNum*>(reply->tail_buf())[0] = 5;
+  EXPECT_CALL(*thread_group_, EnqueueAll(_)).Times(2);
+  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllSubset(_, _))
+      .Times(2)
+      .WillRepeatedly(InvokeArgument<1>());
   FIM_PTR<DSResyncPhaseReplyFim> reply1 =
       DSResyncPhaseReplyFim::MakePtr(sizeof(InodeNum));
   reinterpret_cast<InodeNum*>(reply1->tail_buf())[0] = 5;
@@ -346,6 +358,9 @@ TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
   EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
                       Return(true)));
+  EXPECT_CALL(*thread_group_, EnqueueAll(_));
+  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllSubset(_, _))
+      .WillRepeatedly(InvokeArgument<1>());
 
   resync_sender_->StartResyncPhase(ds_tracker_);
 
@@ -392,6 +407,9 @@ TEST_F(DSResyncTest, ResyncSenderTwoFiles) {
   EXPECT_CALL(*ds_tracker_, AddRequestEntry(_, _))
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
                       Return(true)));
+  EXPECT_CALL(*thread_group_, EnqueueAll(_));
+  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllSubset(_, _))
+      .WillRepeatedly(InvokeArgument<1>());
 
   resync_sender_->StartResyncPhase(ds_tracker_);
 

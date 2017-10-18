@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/format.hpp>
 #include <boost/function.hpp>
@@ -41,6 +42,7 @@
 #include "common.hpp"
 #include "config_mgr.hpp"
 #include "dir_iterator.hpp"
+#include "event.hpp"
 #include "fim.hpp"
 #include "fim_socket.hpp"
 #include "fims.hpp"
@@ -49,6 +51,7 @@
 #include "member_fim_processor.hpp"
 #include "mutex_util.hpp"
 #include "posix_fs.hpp"
+#include "req_completion.hpp"
 #include "req_entry.hpp"
 #include "req_entry_impl.hpp"
 #include "req_tracker.hpp"
@@ -62,6 +65,7 @@
 #include "server/ds/store.hpp"
 #include "server/durable_range.hpp"
 #include "server/inode_removal_tracker.hpp"
+#include "server/thread_group.hpp"
 #include "server/worker_util.hpp"
 
 namespace cpfs {
@@ -245,9 +249,16 @@ class ResyncSender : public IResyncSender {
       pending_inodes_.push_back(inodes[i]);
     LOG(informational, Degraded, "Got ", PVal(pending_inodes_.size()),
         " inodes");
-    boost::unique_lock<boost::shared_mutex> lock;
-    server_->WriteLockDSGState(&lock);
-    server_->set_dsg_inodes_resyncing(pending_inodes_);
+    {
+      boost::unique_lock<boost::shared_mutex> lock;
+      server_->WriteLockDSGState(&lock);
+      server_->set_dsg_inodes_resyncing(pending_inodes_);
+    }
+    server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
+    Event ev;
+    server_->req_completion_checker_set()->OnCompleteAllSubset(
+        pending_inodes_, boost::bind(&Event::Invoke, &ev));
+    ev.Wait();
     return pending_inodes_.size();
   }
 
@@ -296,7 +307,7 @@ class ResyncSender : public IResyncSender {
     uint64_t orig_count = (*count)++;
     shaped_sender->SendFim(fim);
     if (orig_count % 10000 == 0)
-      LOG(notice, Degraded,
+      LOG(informational, Degraded,
           "Sending data Fim ", PINT(orig_count),  " for DS Resync");
   }
 
