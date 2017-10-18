@@ -8,6 +8,8 @@
  * Define request completion checking facilities.
  */
 
+#include <vector>
+
 #include <boost/function.hpp>
 #include <boost/shared_ptr.hpp>
 
@@ -122,7 +124,21 @@ class IReqCompletionCheckerSet {
    *
    * @param callback The callback to call when that happen
    */
-  virtual void OnCompleteAllInodes(ReqCompletionCallback callback) = 0;
+  virtual void OnCompleteAllGlobal(ReqCompletionCallback callback) = 0;
+
+  /**
+   * Register a callback to run once all previously registered
+   * requests of all inodes in a subset are replied.  If there is no
+   * request registered, the method will run synchronously.  Otherwise
+   * it will run by the thread calling the AddReply() method of the
+   * request tracker causing it to become true.
+   *
+   * @param subset The subset of inodes to wait
+   *
+   * @param callback The callback to call when that happen
+   */
+  virtual void OnCompleteAllSubset(
+      const std::vector<InodeNum>& subset, ReqCompletionCallback callback) = 0;
 };
 
 }  // namespace cpfs

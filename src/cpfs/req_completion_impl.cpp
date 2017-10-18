@@ -9,6 +9,7 @@
 #include "req_completion_impl.hpp"
 
 #include <list>
+#include <vector>
 
 #include <boost/bind.hpp>
 #include <boost/enable_shared_from_this.hpp>
@@ -142,7 +143,7 @@ bool ReqCompletionChecker::AllCompleted() {
 }
 
 /**
- * A record for implementing OnCompleteAllInodes.
+ * A record for implementing OnCompleteAllGlobal.
  */
 class AllInodesCompletionRec
     : public boost::enable_shared_from_this<AllInodesCompletionRec> {
@@ -230,13 +231,30 @@ class ReqCompletionCheckerSet : public IReqCompletionCheckerSet,
     callback();
   }
 
-  void OnCompleteAllInodes(ReqCompletionCallback callback) {
+  void OnCompleteAllGlobal(ReqCompletionCallback callback) {
     boost::shared_ptr<AllInodesCompletionRec> rec
         = boost::make_shared<AllInodesCompletionRec>();
     {
       MUTEX_LOCK_GUARD(data_mutex_);
       for (MapType::iterator it = data_.begin(); it != data_.end(); ++it)
         it->second->OnCompleteAll(rec->GetInodeCompletionCallback());
+    }
+    rec->SetCallback(callback);
+  }
+
+  virtual void OnCompleteAllSubset(
+      const std::vector<InodeNum>& subset, ReqCompletionCallback callback) {
+    boost::shared_ptr<AllInodesCompletionRec> rec
+        = boost::make_shared<AllInodesCompletionRec>();
+    {
+      MUTEX_LOCK_GUARD(data_mutex_);
+      for (std::vector<InodeNum>::const_iterator it = subset.begin();
+           it != subset.end();
+           ++it) {
+        MapType::iterator found = data_.find(*it);
+        if (found != data_.end())
+          found->second->OnCompleteAll(rec->GetInodeCompletionCallback());
+      }
     }
     rec->SetCallback(callback);
   }

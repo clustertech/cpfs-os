@@ -209,7 +209,7 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringOther) {
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*dsg_ready_time_keeper_, Stop());
   boost::function<void()> cb;
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllInodes(_))
+  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllGlobal(_))
       .WillOnce(SaveArg<0>(&cb));
 
   // Process Fim, state change immediately
@@ -269,7 +269,7 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringSelf) {
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*dsg_ready_time_keeper_, Stop());
   boost::function<void()> cb;
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllInodes(_))
+  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllGlobal(_))
       .WillOnce(SaveArg<0>(&cb));
 
   // Process Fim, state change immediately
@@ -355,7 +355,7 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeShuttingDown) {
   EXPECT_CALL(*dsg_ready_time_keeper_, Stop());
   boost::function<void()> cb;
   EXPECT_CALL(*shutdown_mgr_, Init(_));
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllInodes(_))
+  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllGlobal(_))
       .WillOnce(SaveArg<0>(&cb));
 
   ds_->set_dsg_state(6, kDSGReady, 0);

@@ -24,7 +24,9 @@ class MockIReqCompletionChecker : public IReqCompletionChecker {
   ((GetReqAckCallback, ReqAckCallback,                                  \
     (InodeNum)(const boost::shared_ptr<IFimSocket>&)))                  \
   ((OnCompleteAll, void, (InodeNum)(ReqCompletionCallback)))            \
-  ((OnCompleteAllInodes, void, (ReqCompletionCallback)))                \
+  ((OnCompleteAllGlobal, void, (ReqCompletionCallback)))                \
+  ((OnCompleteAllSubset, void,                                          \
+    (const std::vector<InodeNum>&)(ReqCompletionCallback)))             \
   ((Clean, void, (InodeNum)))
 
 class MockIReqCompletionCheckerSet : public IReqCompletionCheckerSet {

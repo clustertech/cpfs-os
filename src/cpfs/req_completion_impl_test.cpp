@@ -1,6 +1,8 @@
 /* Copyright 2013 ClusterTech Ltd */
 #include "req_completion_impl.hpp"
 
+#include <vector>
+
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 #include <boost/make_shared.hpp>
@@ -12,6 +14,7 @@
 // IWYU pragma: no_forward_declare testing::MockFunction
 #include <gtest/gtest.h>
 
+#include "common.hpp"
 #include "fim.hpp"
 #include "fim_socket_mock.hpp"
 #include "fims.hpp"
@@ -139,7 +142,7 @@ TEST(ReqCompletionTest, OnComplete) {
   callback2(req_entry2);
 }
 
-TEST(ReqCompletionTest, OnCompleteAllInodes) {
+TEST(ReqCompletionTest, OnCompleteAllGlobal) {
   boost::scoped_ptr<IReqCompletionCheckerSet> checker_set(
       MakeReqCompletionCheckerSet());
   ReqAckCallback callback1, callback2;
@@ -147,7 +150,7 @@ TEST(ReqCompletionTest, OnCompleteAllInodes) {
   // Before any entry is registered: immediately call the callback
   MockFunction<void()> cb;
   EXPECT_CALL(cb, Call());
-  checker_set->OnCompleteAllInodes(boost::bind(GetMockCall(cb), &cb));
+  checker_set->OnCompleteAllGlobal(boost::bind(GetMockCall(cb), &cb));
 
   // Create two entries and retry
   boost::shared_ptr<MockIReqEntry> req_entry1(new MockIReqEntry);
@@ -162,11 +165,54 @@ TEST(ReqCompletionTest, OnCompleteAllInodes) {
         4, boost::shared_ptr<IFimSocket>());
     checker2->RegisterReq(req_entry2);
   }
-  checker_set->OnCompleteAllInodes(boost::bind(GetMockCall(cb), &cb));
+  checker_set->OnCompleteAllGlobal(boost::bind(GetMockCall(cb), &cb));
   callback1(req_entry1);
   Sleep(0.02)();
 
   // On completion, call the callback
+  EXPECT_CALL(cb, Call());
+
+  callback2(req_entry2);
+}
+
+TEST(ReqCompletionTest, OnCompleteAllSubset) {
+  boost::scoped_ptr<IReqCompletionCheckerSet> checker_set(
+      MakeReqCompletionCheckerSet());
+  ReqAckCallback callback1, callback2, callback3;
+
+  // Before any entry is registered: immediately call the callback
+  MockFunction<void()> cb;
+  EXPECT_CALL(cb, Call());
+
+  std::vector<InodeNum> subset;
+  subset.push_back(2);
+  subset.push_back(3);
+  subset.push_back(4);
+  checker_set->OnCompleteAllSubset(subset, boost::bind(GetMockCall(cb), &cb));
+
+  // Create two entries and retry
+  boost::shared_ptr<MockIReqEntry> req_entry1(new MockIReqEntry);
+  boost::shared_ptr<MockIReqEntry> req_entry2(new MockIReqEntry);
+  boost::shared_ptr<MockIReqEntry> req_entry3(new MockIReqEntry);
+  {
+    boost::shared_ptr<IReqCompletionChecker> checker1 = checker_set->Get(3);
+    callback1 = checker_set->GetReqAckCallback(
+        3, boost::shared_ptr<IFimSocket>());
+    checker1->RegisterReq(req_entry1);
+    boost::shared_ptr<IReqCompletionChecker> checker2 = checker_set->Get(4);
+    callback2 = checker_set->GetReqAckCallback(
+        4, boost::shared_ptr<IFimSocket>());
+    checker2->RegisterReq(req_entry2);
+    boost::shared_ptr<IReqCompletionChecker> checker3 = checker_set->Get(5);
+    callback3 = checker_set->GetReqAckCallback(
+        5, boost::shared_ptr<IFimSocket>());
+    checker3->RegisterReq(req_entry3);
+  }
+  checker_set->OnCompleteAllSubset(subset, boost::bind(GetMockCall(cb), &cb));
+  callback1(req_entry1);
+  Sleep(0.02)();
+
+  // On completion, call the callback, even though inode 3 is not yet completed
   EXPECT_CALL(cb, Call());
 
   callback2(req_entry2);
