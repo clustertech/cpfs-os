@@ -442,7 +442,7 @@ class ResyncFimProcessor
    */
   explicit ResyncFimProcessor(BaseDataServer* server)
       : server_(server), data_mutex_(MUTEX_INIT),
-        enabled_(false), resync_list_ready_(false) {
+        enabled_(false), resync_list_ready_(false), dir_end_sent_(false) {
     AddHandler(&ResyncFimProcessor::HandleDSResyncDir);
     AddHandler(&ResyncFimProcessor::HandleDSResyncRemoval);
     AddHandler(&ResyncFimProcessor::HandleDSResyncList);
@@ -489,6 +489,7 @@ class ResyncFimProcessor
   MUTEX_TYPE data_mutex_; /**< Protect data below */
   bool enabled_; /**< Whether the processor is enabled */
   bool resync_list_ready_; /**< Whether resync_list_ is ready */
+  bool dir_end_sent_; /**< Whether dir-only DSResyncEndFim is sent */
   /** Handler to call on completion */
   ResyncCompleteHandler completion_handler_;
   /** List of updated inodes for resync */
@@ -507,7 +508,7 @@ class ResyncFimProcessor
    * about any previous round.
    */
   void Reset() {
-    enabled_ = resync_list_ready_ = false;
+    enabled_ = resync_list_ready_ = dir_end_sent_ = false;
     completion_handler_ = ResyncCompleteHandler();
     updated_inodes_.clear();
     resync_list_.clear();
@@ -607,6 +608,12 @@ class ResyncFimProcessor
          ++it)
       if (!it->second.phase)
         return true;
+    if (!dir_end_sent_) {
+      dir_end_sent_ = true;
+      FIM_PTR<DSResyncEndFim> efim = DSResyncEndFim::MakePtr();
+      (*efim)->end_type = 0;
+      server_->tracker_mapper()->GetMSFimSocket()->WriteMsg(efim);
+    }
     ReplyResyncPhase();
     return true;
   }
@@ -657,6 +664,13 @@ class ResyncFimProcessor
     updated_inodes_.clear();
     std::sort(resync_list_.begin(), resync_list_.end());
     std::reverse(resync_list_.begin(), resync_list_.end());
+    {
+      boost::unique_lock<boost::shared_mutex> lock;
+      server_->WriteLockDSGState(&lock);
+      boost::unordered_set<InodeNum> to_resync(
+          resync_list_.begin(), resync_list_.end());
+      server_->set_dsg_inodes_to_resync(&to_resync);
+    }
     resync_list_ready_ = true;
     LOG(informational, Degraded, "DS resync list: num to resync = ",
         PINT(resync_list_.size()));
@@ -691,6 +705,12 @@ class ResyncFimProcessor
       for (size_t i = 0; i < phase_resync_list.size(); ++i)
         inodes[i] = phase_resync_list[i];
       it->second.phase = 0;
+    }
+    {
+      boost::unique_lock<boost::shared_mutex> lock;
+      server_->WriteLockDSGState(&lock);
+      server_->set_dsg_inodes_resyncing(phase_resync_list);
+      server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
     }
     if (phase_resync_list.empty())
       Finalize();

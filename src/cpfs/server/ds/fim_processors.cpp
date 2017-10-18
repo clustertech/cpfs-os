@@ -152,7 +152,8 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
                              (*fim)->failed, &lock);
       MUTEX_LOCK_SCOPE_LOG();
       // Reset Fim deferring, but only after DSG state unique lock is acquired
-      if (old_state == kDSGRecovering && (*fim)->state != kDSGRecovering)
+      if ((old_state == kDSGRecovering || old_state == kDSGResync) &&
+          (*fim)->state != kDSGRecovering && (*fim)->state != kDSGResync)
         server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
       if ((*fim)->state == kDSGReady) {
         server_->inode_removal_tracker()->SetPersistRemoved(false);
@@ -173,6 +174,8 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
             boost::bind(&MSCtrlFimProcessor::SetDSGRecovering, this,
                         (*fim)->state_change_id, socket));
         return true;
+      } else if ((*fim)->state == kDSGResync) {
+        server_->degraded_cache()->SetActive(true);
       } else if ((*fim)->state == kDSGShuttingDown) {
         server_->shutdown_mgr()->Init(kShutdownTimeout);
         server_->req_completion_checker_set()->OnCompleteAllGlobal(
@@ -187,7 +190,6 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
 
   void SetDSGRecovering(uint64_t state_change_id,
                         boost::shared_ptr<IFimSocket> socket) {
-    server_->degraded_cache()->SetActive(false);
     uint64_t curr_state_change_id;
     GroupRole failed;
     if (server_->dsg_state(&curr_state_change_id, &failed) != kDSGRecovering ||
@@ -214,9 +216,13 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
   }
 
   void ResyncRecvComplete(bool success) {
+    boost::unique_lock<boost::shared_mutex> lock;
+    server_->WriteLockDSGState(&lock);
+    server_->degraded_cache()->SetActive(false);
     if (success) {
-      server_->tracker_mapper()->GetMSFimSocket()->WriteMsg(
-          DSResyncEndFim::MakePtr());
+      FIM_PTR<DSResyncEndFim> efim = DSResyncEndFim::MakePtr();
+      (*efim)->end_type = 1;
+      server_->tracker_mapper()->GetMSFimSocket()->WriteMsg(efim);
     } else {
       // TODO(Isaac): Should terminate the DS (rare)
       LOG(error, Server, "DS Resync failed");

@@ -130,7 +130,7 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
         ready_seen_ = true;
       }
     }
-    if (old_state == kDSGReady && (*fim)->state == kDSGDegraded) {
+    if (old_state != kDSGDegraded && (*fim)->state == kDSGDegraded) {
       boost::shared_ptr<IReqTracker> ds_tracker =
           client_->tracker_mapper()->GetDSTracker(group, failed);
       if (ds_tracker->RedirectRequests(

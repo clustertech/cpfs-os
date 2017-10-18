@@ -58,7 +58,8 @@ struct DSGStateInfo {
   boost::shared_mutex data_mutex; /**< reader-writer lock for fields below */
   uint64_t state_change_id; /**< State change ID leading to current state */
   DSGroupState dsg_state; /**< Current DSG state */
-  GroupRole failed_role; /**< Failed role for kDSGDegraded / kDSGRecovering */
+  /** Failed role for kDSGDegraded / kDSGRecovering / kDSGResync */
+  GroupRole failed_role;
   boost::unordered_set<InodeNum> to_resync; /**< Inodes awaiting resync */
   boost::unordered_set<InodeNum> resyncing; /**< Inodes under resync */
 

@@ -608,12 +608,12 @@ class DSCtrlFimProcessor : public MemberFimProcessor<DSCtrlFimProcessor> {
 
   bool HandleDSResyncEnd(const FIM_PTR<DSResyncEndFim>& fim,
                          const boost::shared_ptr<IFimSocket>& peer) {
-    (void) fim;
+    DSResyncEndFim& rfim = static_cast<DSResyncEndFim&>(*fim);
     GroupId group;
     GroupRole role;
     if (server_->tracker_mapper()->FindDSRole(peer, &group, &role)) {
       ITopologyMgr* topology_mgr = server_->topology_mgr();
-      if (topology_mgr->DSRecovered(group, role)) {
+      if (topology_mgr->DSRecovered(group, role, rfim->end_type)) {
         server_->startup_mgr()->set_dsg_degraded(group, false, role);
         topology_mgr->StartStopWorker();
         topology_mgr->AnnounceDSGState(group);

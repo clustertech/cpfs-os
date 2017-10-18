@@ -700,7 +700,10 @@ DEFINE_FIM_CLASS_VOID(550, DSResyncReqFim, 0);
 /**
  * Fim part for DS resync end.
  */
-DEFINE_FIM_CLASS_VOID(551, DSResyncEndFim, 0);
+DEFINE_FIM_CLASS_STRUCT(551, DSResyncEndFim, 0) {
+  char end_type; /**< 0 = dir-only, 1 = full */
+  FIM_STRUCT_END(551, DSResyncEndFim, 0);
+};
 
 /**
  * Fim part for shutdown request sent by active MS.

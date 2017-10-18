@@ -835,6 +835,7 @@ TEST_F(MSFimProcessorsTest, MSDSDSResyncEnd) {
       .WillOnce(Return(false));
 
   FIM_PTR<DSResyncEndFim> fim = DSResyncEndFim::MakePtr();
+  (*fim)->end_type = 1;
   EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket));
 
   // Can find DS role, DSRecovered failed: return
@@ -842,7 +843,7 @@ TEST_F(MSFimProcessorsTest, MSDSDSResyncEnd) {
       .WillOnce(DoAll(SetArgPointee<1>(0),
                       SetArgPointee<2>(2),
                       Return(true)));
-  EXPECT_CALL(*topology_mgr_, DSRecovered(0, 2))
+  EXPECT_CALL(*topology_mgr_, DSRecovered(0, 2, 1))
       .WillOnce(Return(false));
 
   EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket));
@@ -852,7 +853,7 @@ TEST_F(MSFimProcessorsTest, MSDSDSResyncEnd) {
       .WillOnce(DoAll(SetArgPointee<1>(0),
                       SetArgPointee<2>(2),
                       Return(true)));
-  EXPECT_CALL(*topology_mgr_, DSRecovered(0, 2))
+  EXPECT_CALL(*topology_mgr_, DSRecovered(0, 2, 1))
       .WillOnce(Return(true));
   EXPECT_CALL(*startup_mgr_, set_dsg_degraded(0, false, 2));
   EXPECT_CALL(*topology_mgr_, StartStopWorker());

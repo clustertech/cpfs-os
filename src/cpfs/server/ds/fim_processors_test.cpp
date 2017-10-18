@@ -226,16 +226,13 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringOther) {
   EXPECT_EQ(7U, state_change_id);
   EXPECT_EQ(2U, failed_role);
 
-  // If state changed on inode completion, only the cache is set inactive
-  EXPECT_CALL(*degraded_cache_, SetActive(false));
-
+  // If state is no longer recovering upon inode completion, nothing happen
   ds_->set_dsg_state(7, kDSGDegraded, 2);
   cb();
   EXPECT_FALSE(ds_->opt_resync());
 
   // Otherwise, reply is sent, expecting flag is set
   ds_->set_dsg_state(7, kDSGRecovering, 2);
-  EXPECT_CALL(*degraded_cache_, SetActive(false));
   boost::shared_ptr<MockIReqTracker> tracker(new MockIReqTracker);
   EXPECT_CALL(*tracker_mapper_, GetDSTracker(0, 2))
       .WillRepeatedly(Return(tracker));
@@ -313,6 +310,7 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringSelf) {
   EXPECT_EQ(kDSResyncEndFim, notify_fim->type());
 
   // If failed, log error
+  EXPECT_CALL(*degraded_cache_, SetActive(false));
   MockLogCallback log_cb;
   LogRoute route(log_cb.GetLogCallback());
   EXPECT_CALL(log_cb, Call(PLEVEL(error, Server),
@@ -323,8 +321,30 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringSelf) {
   Mock::VerifyAndClear(tracker_mapper_);
 }
 
-TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeFromRecovering) {
+TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeResync) {
   ds_->set_dsg_state(6, kDSGRecovering, 0);
+
+  FIM_PTR<IFim> fim1;
+  EXPECT_CALL(*thread_group_, EnqueueAll(_))
+      .WillOnce(SaveArg<0>(&fim1));
+  EXPECT_CALL(*dsg_ready_time_keeper_, Stop());
+  EXPECT_CALL(*degraded_cache_, SetActive(true));
+  boost::shared_ptr<MockIFimSocket> fim_socket(new MockIFimSocket);
+  EXPECT_CALL(*fim_socket, WriteMsg(_));
+
+  FIM_PTR<DSGStateChangeFim> fim(new DSGStateChangeFim);
+  (*fim)->state_change_id = 7;
+  (*fim)->state = kDSGResync;
+  (*fim)->failed = 3;
+  (*fim)->distress = 0;
+  ms_ctrl_fim_proc_->Process(fim, fim_socket);
+  DSGDistressModeChangeFim& rfim1 =
+      dynamic_cast<DSGDistressModeChangeFim&>(*fim1);
+  EXPECT_EQ(0U, rfim1->distress);
+}
+
+TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeFromResync) {
+  ds_->set_dsg_state(6, kDSGResync, 0);
 
   EXPECT_CALL(*inode_removal_tracker_, SetPersistRemoved(false));
   EXPECT_CALL(*durable_range_, SetConservative(false));

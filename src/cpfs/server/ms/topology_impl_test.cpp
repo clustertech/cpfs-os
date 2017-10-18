@@ -211,9 +211,10 @@ TEST_F(TopologyTest, AddRemoveDS) {
   EXPECT_EQ(kDSGDegraded, topology_mgr_->GetDSGState(0, &failed));
   topology_mgr_->AddDS(0, 2, ni, false, &state_changed);
   EXPECT_EQ(kDSGRecovering, topology_mgr_->GetDSGState(0, &failed));
-  EXPECT_FALSE(topology_mgr_->DSRecovered(0, 3));
-  EXPECT_TRUE(topology_mgr_->DSRecovered(0, 2));
-  EXPECT_FALSE(topology_mgr_->DSRecovered(0, 2));
+  EXPECT_FALSE(topology_mgr_->DSRecovered(0, 3, 1));
+  EXPECT_TRUE(topology_mgr_->DSRecovered(0, 2, 0));
+  EXPECT_TRUE(topology_mgr_->DSRecovered(0, 2, 1));
+  EXPECT_FALSE(topology_mgr_->DSRecovered(0, 2, 1));
   EXPECT_EQ(kDSGReady, topology_mgr_->GetDSGState(0, &failed));
   topology_mgr_->RemoveDS(0, 2, &state_changed);
   topology_mgr_->AddDS(0, 2, ni, false, &state_changed);

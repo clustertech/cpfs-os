@@ -148,9 +148,11 @@ class ITopologyMgr {
    * @param role The DS group role of the DS which has recovery
    * completed
    *
+   * @param end_type Either 0 (dir-only) or 1 (full)
+   *
    * @return Whether state is changed as a result
    */
-  virtual bool DSRecovered(GroupId group, GroupRole role) = 0;
+  virtual bool DSRecovered(GroupId group, GroupRole role, char end_type) = 0;
 
   /**
    * Check whether the specified DS group is ready to use

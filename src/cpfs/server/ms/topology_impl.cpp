@@ -98,13 +98,19 @@ struct DSGroup {
    *
    * @param role The role triggering it
    *
+   * @param end_type Either 0 (dir-only) or 1 (full)
+   *
    * @return Whether the DSG is switched to ready
    */
-  bool SetRecovered(GroupRole role) {
-    if (state != kDSGRecovering || failed != role)
+  bool SetRecovered(GroupRole role, char end_type) {
+    if (state == kDSGRecovering && end_type == 0) {
+      state = kDSGResync;
+    } else if (state == kDSGResync && end_type == 1) {
+      state = kDSGReady;
+      failed = kNumDSPerGroup;
+    } else {
       return false;
-    state = kDSGReady;
-    failed = kNumDSPerGroup;
+    }
     ++state_change_id;
     return true;
   }
@@ -212,7 +218,7 @@ class TopologyMgr : public ITopologyMgr {
   bool AddDS(GroupId group, GroupRole role, NodeInfo info,
              bool opt_resync, bool* state_changed_ret);
   void RemoveDS(GroupId group, GroupRole role, bool* state_changed_ret);
-  bool DSRecovered(GroupId group, GroupRole role);
+  bool DSRecovered(GroupId group, GroupRole role, char end_type);
   bool DSGReady(GroupId group) const;
   bool AllDSReady();
   bool SuggestDSRole(GroupId* group_ret, GroupRole* role_ret);
@@ -488,11 +494,12 @@ void TopologyMgr::RemoveDS(GroupId group, GroupRole role,
   *state_changed_ret = orig_id != dsg.state_change_id;
 }
 
-bool TopologyMgr::DSRecovered(GroupId group, GroupRole role) {
+bool TopologyMgr::DSRecovered(GroupId group, GroupRole role, char end_type) {
   MUTEX_LOCK_GUARD(data_mutex_);
   ValidateDSGroupRole_(group, role);
-  LOG(informational, Server, "DS ", GroupRoleName(group, role), " recovered");
-  return ds_groups_[group].SetRecovered(role);
+  LOG(informational, Server, "DS ", GroupRoleName(group, role),
+      end_type ? " fully recovered" : " partially recovered");
+  return ds_groups_[group].SetRecovered(role, end_type);
 }
 
 bool TopologyMgr::DSGReady(GroupId group) const {
@@ -807,7 +814,8 @@ bool TopologyMgr::MSActive_() {
   for (GroupId group = 0; group < ds_groups_.size(); ++group) {
     GroupRole failed;
     DSGroupState dsg_state = GetDSGState_(group, &failed);
-    if (dsg_state != kDSGReady && dsg_state != kDSGDegraded)
+    if (dsg_state != kDSGReady && dsg_state != kDSGDegraded &&
+        dsg_state != kDSGResync)
       return false;
   }
   return true;

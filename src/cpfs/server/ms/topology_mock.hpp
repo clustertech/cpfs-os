@@ -20,7 +20,7 @@ namespace ms {
   ((SetDSLost, void, (GroupId)(GroupRole)))                             \
   ((AddDS, bool, (GroupId)(GroupRole)(NodeInfo)(bool)(bool*)))          \
   ((RemoveDS, void, (GroupId)(GroupRole)(bool*)))                       \
-  ((DSRecovered, bool, (GroupId)(GroupRole)))                           \
+  ((DSRecovered, bool, (GroupId)(GroupRole)(char)))                     \
   ((DSGReady, bool, (GroupId), CONST))                                  \
   ((AllDSReady, bool,))                                                 \
   ((SuggestDSRole, bool, (GroupId*)(GroupRole*)))                       \
