@@ -11,9 +11,15 @@
  * adds the initialization and run code.
  */
 
+#include <vector>
+
 #include <boost/scoped_ptr.hpp>
+#include <boost/thread/shared_mutex.hpp>
+#include <boost/unordered_map.hpp>
+#include <boost/unordered_set.hpp>
 
 #include "common.hpp"
+#include "mutex_util.hpp"
 #include "server/base_server.hpp"
 
 namespace cpfs {
@@ -25,6 +31,17 @@ class ITimeKeeper;
 
 namespace server {
 namespace ms {
+
+/**
+ * Represent the operational state of a DS group.
+ *
+ * At present it only keeps which inodes are currently resyncing and
+ * thus cannot be truncated yet.
+ */
+struct DSGOpsState {
+  boost::shared_mutex data_mutex; /**< reader-writer lock for fields below */
+  boost::unordered_set<InodeNum> resyncing; /**< inodes is being resynced */
+};
 
 class IAttrUpdater;
 class ICleaner;
@@ -298,10 +315,45 @@ class BaseMetaServer : public BaseCpfsServer {
    * @return CLI fim processor
    */
   IFimProcessor* admin_fim_processor();
+
   /**
    * @return The counter variable storing number of clients connected so far
    */
   ClientNum& client_num_counter();
+
+  /**
+   * Prepare for reading of DSG operations state.
+   *
+   * @param group The group to read the operation state
+   *
+   * @param lock The lock to keep others from writing to the DSG ops state
+   */
+  void ReadLockDSGOpState(GroupId group,
+                          boost::shared_lock<boost::shared_mutex>* lock);
+
+  /**
+   * Set the inodes to be resyncing.
+   *
+   * @param group The group to set the pending inodes
+   *
+   * @param inodes The inodes resyncing, cleared after the call
+   */
+  void set_dsg_inodes_resyncing(GroupId group,
+                                const std::vector<InodeNum>& inodes);
+
+  /**
+   * Return whether an inode is to be resync'ed
+   *
+   * This function should be called with the LockDSOpState read lock
+   * held (see ReadLockDSOpState()).
+   *
+   * @param group The group to check for inode resync
+   *
+   * @param inode The inode to check
+   *
+   * @return Whether the inode is to be resync'ed
+   */
+  bool is_dsg_inode_resyncing(GroupId group, InodeNum inode);
 
  protected:
   /** Manipulate data directory of meta server */
@@ -353,6 +405,9 @@ class BaseMetaServer : public BaseCpfsServer {
   /** The Admin FIM processor */
   boost::scoped_ptr<IFimProcessor> admin_fim_processor_;
   ClientNum client_num_counter_; /**< Number of clients connected so far */
+  mutable MUTEX_TYPE data_mutex_; /**< Protect fields below */
+  boost::unordered_map<GroupId, DSGOpsState>
+  ops_states_; /**< DSG operation states */
 };
 
 /**

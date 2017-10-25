@@ -8,11 +8,15 @@
 
 #include "server/ms/base_ms.hpp"
 
+#include <algorithm>
 #include <csignal>
+#include <iterator>
 #include <string>
+#include <vector>
 
 #include <boost/foreach.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <boost/unordered_map.hpp>
 
 #include "authenticator.hpp"
@@ -24,6 +28,7 @@
 #include "fims.hpp"
 #include "io_service_runner.hpp"
 #include "logger.hpp"
+#include "mutex_util.hpp"
 #include "shutdown_mgr.hpp"
 #include "thread_fim_processor.hpp"
 #include "time_keeper.hpp"
@@ -356,6 +361,30 @@ IFimProcessor* BaseMetaServer::admin_fim_processor() {
 
 ClientNum& BaseMetaServer::client_num_counter() {
   return client_num_counter_;
+}
+
+void BaseMetaServer::ReadLockDSGOpState(
+    GroupId group, boost::shared_lock<boost::shared_mutex>* lock) {
+  MUTEX_LOCK_GUARD(data_mutex_);
+  DSGOpsState& ops_state = ops_states_[group];
+  MUTEX_LOCK(boost::shared_lock, ops_state.data_mutex, my_lock);
+  lock->swap(my_lock);
+}
+
+void BaseMetaServer::set_dsg_inodes_resyncing(
+    GroupId group, const std::vector<InodeNum>& inodes) {
+  MUTEX_LOCK_GUARD(data_mutex_);
+  DSGOpsState& ops_state = ops_states_[group];
+  MUTEX_LOCK(boost::unique_lock, ops_state.data_mutex, my_lock);
+  ops_state.resyncing.clear();
+  std::copy(inodes.begin(), inodes.end(),
+            std::inserter(ops_state.resyncing, ops_state.resyncing.begin()));
+}
+
+bool BaseMetaServer::is_dsg_inode_resyncing(GroupId group, InodeNum inode) {
+  MUTEX_LOCK_GUARD(data_mutex_);
+  DSGOpsState& ops_state = ops_states_[group];
+  return ops_state.resyncing.find(inode) != ops_state.resyncing.end();
 }
 
 BaseMetaServer* MakeMetaServer(const ConfigMgr& configs) {

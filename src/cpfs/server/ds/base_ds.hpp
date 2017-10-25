@@ -255,7 +255,7 @@ class BaseDataServer : public BaseCpfsServer {
   /**
    * Prepare for update of DSG state.
    *
-   * @param lock The lock to keep others from reading the DSG state update
+   * @param lock The lock to keep others from reading the DSG state
    */
   void WriteLockDSGState(boost::unique_lock<boost::shared_mutex>* lock);
 
