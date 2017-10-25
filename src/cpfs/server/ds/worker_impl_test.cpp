@@ -15,6 +15,7 @@
 #include <boost/make_shared.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/unordered_set.hpp>
 
 #include <gmock/gmock.h>
 // IWYU pragma: no_forward_declare testing::MockFunction
@@ -1541,6 +1542,9 @@ TEST_F(DSWorkerTest, AttrUpdateFim) {
   EXPECT_CALL(*m_fim_socket_, WriteMsg(_))
       .WillOnce(SaveArg<0>(&reply));
 
+  data_server_.set_dsg_state(1, kDSGResync, 0, 0);
+  boost::unordered_set<InodeNum> inodes;
+  data_server_.set_dsg_inodes_to_resync(&inodes);
   FIM_PTR<AttrUpdateFim> fim(new AttrUpdateFim);
   (*fim)->inode = 132;
   worker_->Process(fim, m_fim_socket_);

@@ -1218,10 +1218,18 @@ bool Worker::HandleAttrUpdateFim(const FIM_PTR<AttrUpdateFim>& fim,
   (*reply)->mtime.sec = 0;
   (*reply)->mtime.ns = 0;
   (*reply)->size = 0;
-  // Ignore error -- rely on the behavior that the mtime and size is not
-  // changed in case of error
-  ds()->store()->GetAttr((*fim)->inode, &(*reply)->mtime, &(*reply)->size);
-  replier.SetResult(0);
+  uint64_t state_change_id;
+  GroupRole failed_role;
+  DSGroupState curr_state = ds()->dsg_state(&state_change_id, &failed_role);
+  bool resyncing = curr_state == kDSGResync && failed_role == GetRole() &&
+      ds()->is_inode_to_resync((*fim)->inode);
+  if (curr_state == kDSGReady || curr_state == kDSGDegraded ||
+      (curr_state == kDSGResync && !resyncing)) {
+    // Ignore error -- rely on the behavior that the mtime and size is not
+    // changed in case of error
+    ds()->store()->GetAttr((*fim)->inode, &(*reply)->mtime, &(*reply)->size);
+    replier.SetResult(0);
+  }
   return true;
 }
 
