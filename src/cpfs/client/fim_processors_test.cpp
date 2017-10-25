@@ -1,6 +1,8 @@
 /* Copyright 2013 ClusterTech Ltd */
 #include "client/fim_processors.hpp"
 
+#include <stdint.h>  // IWYU pragma: keep
+
 #include <string>
 
 #include <boost/function.hpp>

@@ -8,10 +8,9 @@
 
 #include "authenticator.hpp"
 
-#include <stddef.h>
-
 #include <sys/time.h>
 
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

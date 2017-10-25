@@ -1,6 +1,8 @@
 /* Copyright 2013 ClusterTech Ltd */
 #include "server/ms/fim_processors.hpp"
 
+#include <stdint.h>  // IWYU pragma: keep
+
 #include <cstring>
 #include <string>
 #include <vector>

@@ -1,6 +1,8 @@
 /* Copyright 2013 ClusterTech Ltd */
 #include "client/admin_fim_processor.hpp"
 
+#include <stdint.h>  // IWYU pragma: keep
+
 #include <boost/function.hpp>
 #include <boost/make_shared.hpp>
 #include <boost/scoped_ptr.hpp>
@@ -9,6 +11,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "common.hpp"  // IWYU pragma: keep
 #include "fim.hpp"
 #include "fim_processor_mock.hpp"
 #include "fim_socket_mock.hpp"

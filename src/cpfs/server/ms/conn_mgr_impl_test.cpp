@@ -1,6 +1,8 @@
 /* Copyright 2013 ClusterTech Ltd */
 #include "server/ms/conn_mgr_impl.hpp"
 
+#include <stdint.h>  // IWYU pragma: keep
+
 #include <cstring>
 #include <string>
 

@@ -12,6 +12,7 @@
 
 #include "asio_common.hpp"
 #include "asio_policy_mock.hpp"
+#include "common.hpp"  // IWYU pragma: keep
 #include "fim.hpp"
 #include "fims.hpp"
 #include "mock_actions.hpp"

@@ -2,6 +2,7 @@
 #include "client/api_common_impl.hpp"
 
 #include <fcntl.h>
+#include <stdint.h>  // IWYU pragma: keep
 
 #include <sys/stat.h>
 

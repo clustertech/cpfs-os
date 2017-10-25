@@ -9,7 +9,6 @@
 #include "client/access_api_main.hpp"
 
 #include <cstdlib>
-#include <string>
 
 #include <boost/scoped_ptr.hpp>
 
