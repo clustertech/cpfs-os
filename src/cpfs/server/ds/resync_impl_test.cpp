@@ -162,7 +162,8 @@ class DSResyncTest : public ::testing::Test {
     }
     FIM_PTR<IFim> efim;
     EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
-        .WillOnce(SaveArg<0>(&efim));
+        .WillOnce(SaveArg<0>(&efim))
+        .WillOnce(DoDefault());
     EXPECT_CALL(*thread_group_, EnqueueAll(_));
 
     resync_fim_processor_->Process(DSResyncPhaseFim::MakePtr(),
@@ -757,6 +758,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorEarlyResyncEnd) {
   EXPECT_CALL(*fim_sockets[1], WriteMsg(_))
       .WillOnce(DoDefault())
       .WillOnce(SaveArg<0>(fims + 1));
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_));
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*posix_fs_, Sync());
   EXPECT_CALL(completion_handler_, Call(true));
@@ -806,6 +808,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorCancelledContent) {
   // No content is written out, data writer not obtained
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
     EXPECT_CALL(*fim_sockets[i], WriteMsg(_)).Times(i < 2 ? 2 : 1);
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_));
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*posix_fs_, Sync());
   EXPECT_CALL(completion_handler_, Call(true));
@@ -877,6 +880,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorLateResyncEnd) {
   // send list on socket 2, trigger full completion
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
     EXPECT_CALL(*fim_sockets[i], WriteMsg(_));
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_));
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*posix_fs_, Sync());
   EXPECT_CALL(completion_handler_, Call(true));
@@ -1028,7 +1032,7 @@ TEST_F(DSResyncTest, ResyncFimProcessorOptResync) {
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
     EXPECT_CALL(*fim_sockets[i], WriteMsg(_))
         .WillOnce(SaveArg<0>(&reply));
-  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_)).Times(2);
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
 
   FIM_PTR<DSResyncPhaseFim> pfim = DSResyncPhaseFim::MakePtr();

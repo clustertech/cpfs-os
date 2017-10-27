@@ -612,6 +612,7 @@ class ResyncFimProcessor
       dir_end_sent_ = true;
       FIM_PTR<DSResyncEndFim> efim = DSResyncEndFim::MakePtr();
       (*efim)->end_type = 0;
+      // TODO(Isaac): What to do if MSFimSocket is missing?
       server_->tracker_mapper()->GetMSFimSocket()->WriteMsg(efim);
     }
     ReplyResyncPhase();
@@ -676,6 +677,14 @@ class ResyncFimProcessor
         PINT(resync_list_.size()));
   }
 
+  template<typename TFim> FIM_PTR<TFim>
+  MakePhaseInodeListFim(const std::vector<InodeNum>& phase_resync_list) {
+    std::size_t size = phase_resync_list.size() * sizeof(InodeNum);
+    FIM_PTR<TFim> fim = TFim::MakePtr(size);
+    std::memcpy(fim->tail_buf(), phase_resync_list.data(), size);
+    return fim;
+  }
+
   /**
    * Send reply to DSResyncPhaseFim previously received, using
    * information collected previously by ComposeResyncList.
@@ -698,14 +707,15 @@ class ResyncFimProcessor
       const boost::shared_ptr<IFimSocket>& peer = it->first;
       ReplyOnExit r(fim, peer);
       FIM_PTR<DSResyncPhaseReplyFim> reply =
-          DSResyncPhaseReplyFim::MakePtr(
-              phase_resync_list.size() * sizeof(InodeNum));
+          MakePhaseInodeListFim<DSResyncPhaseReplyFim>(phase_resync_list);
       r.SetNormalReply(reply);
-      InodeNum* inodes = reinterpret_cast<InodeNum*>(reply->tail_buf());
-      for (size_t i = 0; i < phase_resync_list.size(); ++i)
-        inodes[i] = phase_resync_list[i];
       it->second.phase = 0;
     }
+    boost::shared_ptr<IFimSocket> ms_socket =
+        server_->tracker_mapper()->GetMSFimSocket();
+    if (ms_socket)
+      ms_socket->WriteMsg(
+          MakePhaseInodeListFim<DSResyncPhaseInodeListFim>(phase_resync_list));
     {
       boost::unique_lock<boost::shared_mutex> lock;
       server_->WriteLockDSGState(&lock);

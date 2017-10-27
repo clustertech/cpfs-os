@@ -707,6 +707,21 @@ DEFINE_FIM_CLASS_STRUCT(551, DSResyncEndFim, 0) {
 };
 
 /**
+ * Fim part for DS to tell MS the list of inodes being resync'ed in a phase.
+ *
+ * Actual inodes in tail buffer.
+ */
+DEFINE_FIM_CLASS_VOID(552, DSResyncPhaseInodeListFim, 0);
+
+/**
+ * Fim part for MS to tell DS the list of inodes being resync'ed is "locked".
+ *
+ * Actual inodes in tail buffer.  This is not sent if the list is
+ * empty, indicating the resync is completed.
+ */
+DEFINE_FIM_CLASS_VOID(553, DSResyncPhaseInodeListReadyFim, 0);
+
+/**
  * Fim part for shutdown request sent by active MS.
  */
 DEFINE_FIM_CLASS_VOID(560, SysShutdownReqFim, 0);

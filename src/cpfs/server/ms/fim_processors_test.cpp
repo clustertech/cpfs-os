@@ -862,6 +862,44 @@ TEST_F(MSFimProcessorsTest, MSDSDSResyncEnd) {
   EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket));
 }
 
+TEST_F(MSFimProcessorsTest, MSDSDSResyncPhaseInodeList) {
+  boost::shared_ptr<MockIFimSocket> ds_fim_socket(new MockIFimSocket);
+  boost::shared_ptr<IFimSocket> ifs = ds_fim_socket;
+
+  // Cannot find DS role: just return
+  EXPECT_CALL(*tracker_mapper_, FindDSRole(ifs, _, _))
+      .WillOnce(Return(false));
+
+  FIM_PTR<DSResyncPhaseInodeListFim> fim =
+      DSResyncPhaseInodeListFim::MakePtr(2 * sizeof(InodeNum));
+  InodeNum* inodes = reinterpret_cast<InodeNum*>(fim->tail_buf());
+  inodes[0] = 42;
+  inodes[1] = 43;
+  EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket));
+
+  // Can find DS role, incorrect state: just return
+  EXPECT_CALL(*tracker_mapper_, FindDSRole(ifs, _, _))
+      .WillRepeatedly(DoAll(SetArgPointee<1>(0),
+                            SetArgPointee<2>(2),
+                            Return(true)));
+  EXPECT_CALL(*topology_mgr_, GetDSGState(0, _))
+      .WillOnce(DoAll(SetArgPointee<1>(0),
+                      Return(kDSGRecovering)));
+
+  EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket));
+
+  // Can find DS role, state is resync, set resyncing inodes
+  EXPECT_CALL(*topology_mgr_, GetDSGState(0, _))
+      .WillOnce(DoAll(SetArgPointee<1>(0),
+                      Return(kDSGResync)));
+
+  EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket));
+  EXPECT_TRUE(ms_->is_dsg_inode_resyncing(0, 42));
+  EXPECT_TRUE(ms_->is_dsg_inode_resyncing(0, 43));
+  EXPECT_FALSE(ms_->is_dsg_inode_resyncing(0, 41));
+  EXPECT_FALSE(ms_->is_dsg_inode_resyncing(1, 42));
+}
+
 TEST_F(MSFimProcessorsTest, MSResyncReqCombined) {
   MSStateChangeCallback callback;
   EXPECT_CALL(*state_mgr_, OnState(kStateResync, _))

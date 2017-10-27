@@ -10,8 +10,10 @@
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -572,6 +574,7 @@ class DSCtrlFimProcessor : public MemberFimProcessor<DSCtrlFimProcessor> {
       : server_(meta_server) {
     AddHandler(&DSCtrlFimProcessor::HandleDSGStateChangeAck);
     AddHandler(&DSCtrlFimProcessor::HandleDSResyncEnd);
+    AddHandler(&DSCtrlFimProcessor::HandleDSResyncPhaseInodeList);
   }
 
  private:
@@ -618,6 +621,25 @@ class DSCtrlFimProcessor : public MemberFimProcessor<DSCtrlFimProcessor> {
         topology_mgr->StartStopWorker();
         topology_mgr->AnnounceDSGState(group);
       }
+    }
+    return true;
+  }
+
+  bool HandleDSResyncPhaseInodeList(
+      const FIM_PTR<DSResyncPhaseInodeListFim>& fim,
+      const boost::shared_ptr<IFimSocket>& peer) {
+    GroupId group;
+    GroupRole role;
+    if (server_->tracker_mapper()->FindDSRole(peer, &group, &role)) {
+      GroupRole failed;
+      DSGroupState state = server_->topology_mgr()->GetDSGState(group, &failed);
+      if (state != kDSGResync)
+        return true;
+      std::size_t size = fim->tail_buf_size() / sizeof(InodeNum);
+      InodeNum* inodes = reinterpret_cast<InodeNum*>(fim->tail_buf());
+      std::vector<InodeNum> resyncing;
+      std::copy(inodes, inodes + size, std::back_inserter(resyncing));
+      server_->set_dsg_inodes_resyncing(group, resyncing);
     }
     return true;
   }
