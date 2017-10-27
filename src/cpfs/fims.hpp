@@ -399,10 +399,11 @@ operator*(TFim& fim) {  // NOLINT(runtime/references)
   FIMS_DEF_HOOK(name);
 
 /**
- * First request-reply Fim type.  FIM with ID higher than this always
- * starts with an InodeNum for worker dispatch.
+ * First request-reply Fim type.  FIMs with ID higher than this always
+ * starts with an InodeNum for worker dispatch unless it is a reply
+ * (with kFimFlagReply).
  */
-const int kMinReqReplyFimType = 1000;
+const int kMinReqReplyFimType = 30000;
 
 /* ===== Generic non-request-response Fim's, type 1-49. ===== */
 
@@ -827,362 +828,7 @@ DEFINE_FIM_CLASS_STRUCT(670, PeerConfigChangeReqFim, 0) {
   FIM_STRUCT_END(670, PeerConfigChangeReqFim, 0);
 };
 
-/* ===== Fim's for inode maintenance, type 1000-1999. ===== */
-
-/**
- * Fim part for the get file attributes operation.  Replied by
- * AttrReplyFim without group info.
- */
-DEFINE_FIM_CLASS_STRUCT(1000, GetattrFim, 0) {
-  InodeNum inode; /**< The inode number of the file to get attributes */
-  ReqContext context; /**< The context of the operation */
-  FIM_STRUCT_END(1000, GetattrFim, 0);
-};
-
-/**
- * Fim part for the set file attributes operation.  Replied by
- * AttrReplyFim without group information.
- */
-DEFINE_FIM_CLASS_STRUCT(1010, SetattrFim, 0) {
-  InodeNum inode; /**< The inode number of the file to set attributes */
-  ReqContext context; /**< The context of the operation */
-  FileAttr fa; /**< The attributes to set */
-  uint32_t fa_mask; /**< Mask specifying which of fa needs to be set */
-  char locked; /**< Whether locked setattr is used */
-  FIM_STRUCT_END(1010, SetattrFim, 0);
-};
-
-/**
- * Fim part for DS inode lock operation.  It can also be used to
- * remove all locks, in which case inode = 0 and lock = '\2'.
- */
-DEFINE_FIM_CLASS_STRUCT(1020, DSInodeLockFim, 0) {
-  InodeNum inode; /**< The inode number of the file to lock / unlock */
-  char lock; /**< '\\0' for unlock, '\\1' for lock, '\\2' for unlock all */
-  FIM_STRUCT_END(1020, DSInodeLockFim, 0);
-};
-
-/**
- * Fim part for the invalidation operation.
- */
-DEFINE_FIM_CLASS_STRUCT(1030, InvInodeFim, 0) {
-  InodeNum inode; /**< The inode number to invalidate */
-  uint8_t clear_page; /**< Whether page / dentries are to be cleared */
-  FIM_STRUCT_END(1030, InvInodeFim, 0);
-};
-
-/* ===== Fim's for directory operations, type 2000-2999. ===== */
-
-/**
- * Fim part for the create file operation.  Filename in tail buffer,
- * and must be null-terminated.  DS groups are also in tail buffer,
- * after the filename (occupying the last (sizeof(GroupId) *
- * num_ds_groups) bytes).  This is empty (with num_ds_groups = 0)
- * except for replication requests.  Replied by AttrReplyFim with
- * group information.
- */
-DEFINE_FIM_CLASS_STRUCT(2000, CreateFim, 0) {
-  InodeNum inode; /**< The inode number of the directory to hold the file */
-  ReqContext context; /**< The context of the operation */
-  CreateReq req; /**< Details of the file to create */
-  uint16_t num_ds_groups; /**< Number of DS groups in request */
-  FIM_STRUCT_END(2000, CreateFim, 0);
-};
-
-/**
- * Fim part for the unlink file operation.  Filename in tail buffer,
- * and must be null-terminated.
- */
-DEFINE_FIM_CLASS_STRUCT(2010, UnlinkFim, 0) {
-  InodeNum inode; /**< The inode number of the directory to have file unlink */
-  ReqContext context; /**< The context of the operation */
-  FIM_STRUCT_END(2010, UnlinkFim, 0);
-};
-
-/**
- * Fim part for the lookup file operation.  Filename in tail buffer,
- * and must be null-terminated.  Replied by AttrReplyFim without group
- * information.
- */
-DEFINE_FIM_CLASS_STRUCT(2020, LookupFim, 0) {
-  InodeNum inode; /**< The inode number of the directory to lookup */
-  ReqContext context; /**< The context of the operation */
-  FIM_STRUCT_END(2020, LookupFim, 0);
-};
-
-/**
- * Fim part for the readdir file operation.  Reply with DataReplyFim,
- * where actual data is in tail buffer.  The data is the concatenation
- * of ReaddirRecord's, without end marker (size of Fim marks the end
- * already).
- */
-DEFINE_FIM_CLASS_STRUCT(2030, ReaddirFim, 0) {
-  InodeNum inode; /**< The inode number of the file found */
-  DentryCookie cookie; /**< Dentry cookie */
-  uint32_t size; /**< Maximum size to return */
-  FIM_STRUCT_END(2030, ReaddirFim, 0);
-};
-
-/**
- * Fim part for new directory creation.  Replied by CreateReplyFim.
- */
-DEFINE_FIM_CLASS_STRUCT(2040, MkdirFim, 0) {
-  InodeNum parent; /**< The inode number of the parent */
-  ReqContext context; /**< The context of the operation */
-  CreateDirReq req; /**< Details of the folder to create */
-  FIM_STRUCT_END(2040, MkdirFim, 0);
-};
-
-/**
- * Fim part for the symlink file operation.  Both filename and link
- * target should be in tail buffer, and both must be null-terminated.
- * The name_len field indicate the length of the name (not counting
- * the null character), so that the link target starts at
- * tail_buf()[name_len + 1].  Replied by CreateReplyFim.
- */
-DEFINE_FIM_CLASS_STRUCT(2050, SymlinkFim, 0) {
-  InodeNum inode; /**< The inode number of the directory to hold the file */
-  ReqContext context; /**< The context of the operation */
-  InodeNum new_inode; /**< The inode number of the symlink */
-  uint16_t name_len; /**< Length of name of symlink */
-  FIM_STRUCT_END(2050, SymlinkFim, 0);
-};
-
-/**
- * Fim part for the readlink file operation.  Replied with DataReplyFim.
- */
-DEFINE_FIM_CLASS_STRUCT(2060, ReadlinkFim, 0) {
-  InodeNum inode; /**< The inode number of the directory to hold the file */
-  ReqContext context; /**< The context of the operation */
-  FIM_STRUCT_END(2060, ReadlinkFim, 0);
-};
-
-/**
- * Fim part for the link file operation.  The name of the new file is
- * in the tail buffer, null terminated.  Replied by AttrReplyFim
- * without group information.
- */
-DEFINE_FIM_CLASS_STRUCT(2070, LinkFim, 0) {
-  InodeNum inode; /**< The inode number of the file */
-  ReqContext context; /**< The context of the operation */
-  InodeNum dir_inode; /**< The inode number of the directory of the link */
-  FIM_STRUCT_END(2070, LinkFim, 0);
-};
-
-/**
- * Fim part for the rename file operation.  The name_len field
- * indicate the length of the name (not counting the null character),
- * so that the target file name starts at tail_buf()[name_len + 1].
- * Reply with ResultCodeReplyFim.
- */
-DEFINE_FIM_CLASS_STRUCT(2080, RenameFim, 0) {
-  InodeNum new_parent; /**< The inode number of the new parent */
-  InodeNum parent; /**< The inode number of the parent of the file */
-  ReqContext context; /**< The context of the operation */
-  uint32_t name_len; /**< Length of the original filename */
-  FIM_STRUCT_END(2080, RenameFim, 0);
-};
-
-/**
- * Fim part for the rename file operation.  Name in tail buffer, with
- * '\0' appended.  Reply with ResultCodeReplyFim.
- */
-DEFINE_FIM_CLASS_STRUCT(2090, RmdirFim, 0) {
-  InodeNum parent; /**< The inode number of the parent of the file */
-  ReqContext context; /**< The context of the operation */
-  FIM_STRUCT_END(2090, RmdirFim, 0);
-};
-
-/**
- * Fim part for the mknod file operation.  The filename should be in
- * tail buffer, and must be null-terminated.  DS groups are also in
- * tail buffer, after the filename (occupying the last
- * (sizeof(GroupId) * num_ds_groups) bytes).  This is empty (with
- * num_ds_groups = 0) except for replication requests.  Replied by
- * CreateReplyFim.
- */
-DEFINE_FIM_CLASS_STRUCT(2100, MknodFim, 0) {
-  InodeNum inode; /**< The inode number of the directory to hold the file */
-  ReqContext context; /**< The context of the operation */
-  InodeNum new_inode; /**< The inode number of the node */
-  uint64_t mode; /**< File type and mode of the device node to create */
-  uint64_t rdev; /**< The device number, in case it is a device */
-  uint16_t num_ds_groups; /**< Number of DS groups in request */
-  FIM_STRUCT_END(2100, MknodFim, 0);
-};
-
-/* ===== Fim's for file operations, type 3000-3999. ===== */
-
-/**
- * Fim part for the open file operation.  Replied with DataReplyFim,
- * containing the group numbers of the file in tail buffer.
- */
-DEFINE_FIM_CLASS_STRUCT(3000, OpenFim, 0) {
-  InodeNum inode; /**< The inode number of the file to open */
-  ReqContext context; /**< The context of the operation */
-  int32_t flags;  /**< File open flags */
-  FIM_STRUCT_END(3000, OpenFim, 0);
-};
-
-/**
- * Fim part for the access file operation.  Replied with
- * ResultCodeReplyFim, containing whether the file access can be
- * granted.
- */
-DEFINE_FIM_CLASS_STRUCT(3001, AccessFim, 0) {
-  InodeNum inode; /**< The inode number of the file to check access */
-  ReqContext context; /**< The context of the operation */
-  int32_t mask;  /**< File mask */
-  FIM_STRUCT_END(3001, AccessFim, 0);
-};
-
-/**
- * Fim part for the write file operation.  Note that this Fim needs
- * special 16-byte alignment for SSE instructions.
- */
-DEFINE_FIM_CLASS_STRUCT(3010, WriteFim, 0) {
-  InodeNum inode; /**< The inode number of the file to write */
-  FSTime optime; /**< The last status change time of the file */
-  uint64_t dsg_off; /**< The offset in the DSG to write */
-  uint64_t last_off; /**< The last offset of the file being written */
-  GroupId target_group; /**< The group ID of the group being read */
-  GroupRole target_role; /**< The role in the group being written */
-  GroupRole checksum_role; /**< The role in the group for checksum */
-  uint8_t padding[12]; /**< Make the whole Fim 16-byte aligned for SSE */
-  FIM_STRUCT_END(3010, WriteFim, 0);
-};
-
-/**
- * Fim part for the checksum update file operation.  Note that this
- * Fim needs special 16-byte alignment for SSE instructions.
- */
-DEFINE_FIM_CLASS_STRUCT(3011, ChecksumUpdateFim, 0) {
-  InodeNum inode; /**< The inode number of the file to write */
-  FSTime optime; /**< The last status change time of the file */
-  uint64_t dsg_off; /**< The offset in the DS to write */
-  uint64_t last_off; /**< The last offset of the file being written */
-  uint8_t padding[8]; /**< Make the whole Fim 16-byte aligned for SSE */
-  FIM_STRUCT_END(3011, ChecksumUpdateFim, 0);
-};
-
-/**
- * Fim part for read file operation.  Replied with DataReplyFim.
- */
-DEFINE_FIM_CLASS_STRUCT(3020, ReadFim, 0) {
-  InodeNum inode; /**< The inode number of the file to read */
-  uint64_t dsg_off; /**< The offset in the DSG to read */
-  uint32_t size; /**< The number of bytes to read */
-  GroupId target_group; /**< The group ID of the group being read */
-  GroupRole target_role; /**< The role in the group being read */
-  GroupRole checksum_role; /**< The role in the group for checksum */
-  FIM_STRUCT_END(3020, ReadFim, 0);
-};
-
-/**
- * Fim part for advising MS that file write has taken place on an
- * inode.  MS use the information to extend the file.
- */
-DEFINE_FIM_CLASS_STRUCT(3030, AdviseWriteFim, 0) {
-  InodeNum inode; /**< The inode number of the file to write */
-  ReqContext context; /**< The context of the operation */
-  uint64_t off; /**< The last offset of the file being written */
-  FIM_STRUCT_END(3030, AdviseWriteFim, 0);
-};
-
-/**
- * Fim part for the truncate data operation.
- */
-DEFINE_FIM_CLASS_STRUCT(3040, TruncateDataFim, 0) {
-  InodeNum inode; /**< The inode number of the file to truncate */
-  FSTime optime; /**< The last status change time of the file */
-  uint64_t dsg_off; /**< The target size of the file in DSG */
-  uint64_t last_off; /**< The target size of the file */
-  GroupRole target_role; /**< The role in the group being read */
-  GroupRole checksum_role; /**< The role in the group for checksum */
-  FIM_STRUCT_END(3040, TruncateDataFim, 0);
-};
-
-/**
- * Fim part for decrementing FC's inode open count in MS.  Each open()
- * has one corresponding release().  This Fim is sent only by the last
- * release() call.
- */
-DEFINE_FIM_CLASS_STRUCT(3050, ReleaseFim, 0) {
-  InodeNum inode; /**< The inode number of the inode */
-  char keep_read; /**< Whether the client keeps read permission */
-  char clean; /**< Whether nothing has been written since open */
-  FIM_STRUCT_END(3050, ReleaseFim, 0);
-};
-
-/**
- * Fim part for the free data file operation.
- */
-DEFINE_FIM_CLASS_STRUCT(3060, FreeDataFim, 0) {
-  InodeNum inode; /**< The inode number of the data file to free */
-  FIM_STRUCT_END(3060, FreeDataFim, 0);
-};
-
-/**
- * Fim part for the opendir operation.
- */
-DEFINE_FIM_CLASS_STRUCT(3070, OpendirFim, 0) {
-  InodeNum inode; /**< The inode number of the directory to open */
-  ReqContext context; /**< The context of the operation */
-  FIM_STRUCT_END(3070, OpendirFim, 0);
-};
-
-/**
- * Fim part for updating DS data file mtime.
- */
-DEFINE_FIM_CLASS_STRUCT(3080, MtimeUpdateFim, 0) {
-  InodeNum inode; /**< The inode number of the file to update */
-  FSTime mtime; /**< The new mtime */
-  FIM_STRUCT_END(3080, MtimeUpdateFim, 0);
-};
-
-/**
- * Fim part for setting xattr. The tail buffer stores the attribute name
- * and value.
- */
-DEFINE_FIM_CLASS_STRUCT(3090, SetxattrFim, 0) {
-  InodeNum inode; /**< The inode number of the file to set */
-  ReqContext context; /**< The context of the operation */
-  uint64_t name_len; /**< The length of the attribute name, including '\0' */
-  uint64_t value_len; /**< The length of the attribute value */
-  uint16_t flags; /**< The flags */
-  FIM_STRUCT_END(3090, SetxattrFim, 0);
-};
-
-/**
- * Fim part for getting xattr. The tail buffer stores the attribute name
- */
-DEFINE_FIM_CLASS_STRUCT(3100, GetxattrFim, 0) {
-  InodeNum inode; /**< The inode number of the file to get */
-  ReqContext context; /**< The context of the operation */
-  uint64_t value_len; /**< The length of the attribute value */
-  FIM_STRUCT_END(3100, GetxattrFim, 0);
-};
-
-/**
- * Fim part for listing xattr
- */
-DEFINE_FIM_CLASS_STRUCT(3110, ListxattrFim, 0) {
-  InodeNum inode; /**< The inode number of the file to list */
-  ReqContext context; /**< The context of the operation */
-  uint32_t size; /**< The length of the list to retrieve */
-  FIM_STRUCT_END(3110, ListxattrFim, 0);
-};
-
-/**
- * Fim part for removing xattr. The tail buffer stores the attribute name
- */
-DEFINE_FIM_CLASS_STRUCT(3120, RemovexattrFim, 0) {
-  InodeNum inode; /**< The inode number of the file to list */
-  ReqContext context; /**< The context of the operation */
-  FIM_STRUCT_END(3120, RemovexattrFim, 0);
-};
-
-/* ===== Fim's for file operations, type 10000-10999. ===== */
+/* ===== Reply Fim's for file operations, type 10000-10999. ===== */
 
 /**
  * Fim part for final replies.
@@ -1412,5 +1058,360 @@ DEFINE_FIM_CLASS_VOID(21030, DSResyncPhaseFim, 0);
  * in the tail buffer.
  */
 DEFINE_FIM_CLASS_VOID(21031, DSResyncPhaseReplyFim, kFimFlagReply);
+
+/* ===== Fim's for inode maintenance, type 30000-30999. ===== */
+
+/**
+ * Fim part for the get file attributes operation.  Replied by
+ * AttrReplyFim without group info.
+ */
+DEFINE_FIM_CLASS_STRUCT(30000, GetattrFim, 0) {
+  InodeNum inode; /**< The inode number of the file to get attributes */
+  ReqContext context; /**< The context of the operation */
+  FIM_STRUCT_END(30000, GetattrFim, 0);
+};
+
+/**
+ * Fim part for the set file attributes operation.  Replied by
+ * AttrReplyFim without group information.
+ */
+DEFINE_FIM_CLASS_STRUCT(30010, SetattrFim, 0) {
+  InodeNum inode; /**< The inode number of the file to set attributes */
+  ReqContext context; /**< The context of the operation */
+  FileAttr fa; /**< The attributes to set */
+  uint32_t fa_mask; /**< Mask specifying which of fa needs to be set */
+  char locked; /**< Whether locked setattr is used */
+  FIM_STRUCT_END(30010, SetattrFim, 0);
+};
+
+/**
+ * Fim part for DS inode lock operation.  It can also be used to
+ * remove all locks, in which case inode = 0 and lock = '\2'.
+ */
+DEFINE_FIM_CLASS_STRUCT(30020, DSInodeLockFim, 0) {
+  InodeNum inode; /**< The inode number of the file to lock / unlock */
+  char lock; /**< '\\0' for unlock, '\\1' for lock, '\\2' for unlock all */
+  FIM_STRUCT_END(30020, DSInodeLockFim, 0);
+};
+
+/**
+ * Fim part for the invalidation operation.
+ */
+DEFINE_FIM_CLASS_STRUCT(30030, InvInodeFim, 0) {
+  InodeNum inode; /**< The inode number to invalidate */
+  uint8_t clear_page; /**< Whether page / dentries are to be cleared */
+  FIM_STRUCT_END(30030, InvInodeFim, 0);
+};
+
+/* ===== Fim's for directory operations, type 31000-31999. ===== */
+
+/**
+ * Fim part for the create file operation.  Filename in tail buffer,
+ * and must be null-terminated.  DS groups are also in tail buffer,
+ * after the filename (occupying the last (sizeof(GroupId) *
+ * num_ds_groups) bytes).  This is empty (with num_ds_groups = 0)
+ * except for replication requests.  Replied by AttrReplyFim with
+ * group information.
+ */
+DEFINE_FIM_CLASS_STRUCT(31000, CreateFim, 0) {
+  InodeNum inode; /**< The inode number of the directory to hold the file */
+  ReqContext context; /**< The context of the operation */
+  CreateReq req; /**< Details of the file to create */
+  uint16_t num_ds_groups; /**< Number of DS groups in request */
+  FIM_STRUCT_END(31000, CreateFim, 0);
+};
+
+/**
+ * Fim part for the unlink file operation.  Filename in tail buffer,
+ * and must be null-terminated.
+ */
+DEFINE_FIM_CLASS_STRUCT(31010, UnlinkFim, 0) {
+  InodeNum inode; /**< The inode number of the directory to have file unlink */
+  ReqContext context; /**< The context of the operation */
+  FIM_STRUCT_END(31010, UnlinkFim, 0);
+};
+
+/**
+ * Fim part for the lookup file operation.  Filename in tail buffer,
+ * and must be null-terminated.  Replied by AttrReplyFim without group
+ * information.
+ */
+DEFINE_FIM_CLASS_STRUCT(31020, LookupFim, 0) {
+  InodeNum inode; /**< The inode number of the directory to lookup */
+  ReqContext context; /**< The context of the operation */
+  FIM_STRUCT_END(31020, LookupFim, 0);
+};
+
+/**
+ * Fim part for the readdir file operation.  Reply with DataReplyFim,
+ * where actual data is in tail buffer.  The data is the concatenation
+ * of ReaddirRecord's, without end marker (size of Fim marks the end
+ * already).
+ */
+DEFINE_FIM_CLASS_STRUCT(31030, ReaddirFim, 0) {
+  InodeNum inode; /**< The inode number of the file found */
+  DentryCookie cookie; /**< Dentry cookie */
+  uint32_t size; /**< Maximum size to return */
+  FIM_STRUCT_END(31030, ReaddirFim, 0);
+};
+
+/**
+ * Fim part for new directory creation.  Replied by CreateReplyFim.
+ */
+DEFINE_FIM_CLASS_STRUCT(31040, MkdirFim, 0) {
+  InodeNum parent; /**< The inode number of the parent */
+  ReqContext context; /**< The context of the operation */
+  CreateDirReq req; /**< Details of the folder to create */
+  FIM_STRUCT_END(31040, MkdirFim, 0);
+};
+
+/**
+ * Fim part for the symlink file operation.  Both filename and link
+ * target should be in tail buffer, and both must be null-terminated.
+ * The name_len field indicate the length of the name (not counting
+ * the null character), so that the link target starts at
+ * tail_buf()[name_len + 1].  Replied by CreateReplyFim.
+ */
+DEFINE_FIM_CLASS_STRUCT(31050, SymlinkFim, 0) {
+  InodeNum inode; /**< The inode number of the directory to hold the file */
+  ReqContext context; /**< The context of the operation */
+  InodeNum new_inode; /**< The inode number of the symlink */
+  uint16_t name_len; /**< Length of name of symlink */
+  FIM_STRUCT_END(31050, SymlinkFim, 0);
+};
+
+/**
+ * Fim part for the readlink file operation.  Replied with DataReplyFim.
+ */
+DEFINE_FIM_CLASS_STRUCT(31060, ReadlinkFim, 0) {
+  InodeNum inode; /**< The inode number of the directory to hold the file */
+  ReqContext context; /**< The context of the operation */
+  FIM_STRUCT_END(31060, ReadlinkFim, 0);
+};
+
+/**
+ * Fim part for the link file operation.  The name of the new file is
+ * in the tail buffer, null terminated.  Replied by AttrReplyFim
+ * without group information.
+ */
+DEFINE_FIM_CLASS_STRUCT(31070, LinkFim, 0) {
+  InodeNum inode; /**< The inode number of the file */
+  ReqContext context; /**< The context of the operation */
+  InodeNum dir_inode; /**< The inode number of the directory of the link */
+  FIM_STRUCT_END(31070, LinkFim, 0);
+};
+
+/**
+ * Fim part for the rename file operation.  The name_len field
+ * indicate the length of the name (not counting the null character),
+ * so that the target file name starts at tail_buf()[name_len + 1].
+ * Reply with ResultCodeReplyFim.
+ */
+DEFINE_FIM_CLASS_STRUCT(31080, RenameFim, 0) {
+  InodeNum new_parent; /**< The inode number of the new parent */
+  InodeNum parent; /**< The inode number of the parent of the file */
+  ReqContext context; /**< The context of the operation */
+  uint32_t name_len; /**< Length of the original filename */
+  FIM_STRUCT_END(31080, RenameFim, 0);
+};
+
+/**
+ * Fim part for the rename file operation.  Name in tail buffer, with
+ * '\0' appended.  Reply with ResultCodeReplyFim.
+ */
+DEFINE_FIM_CLASS_STRUCT(31090, RmdirFim, 0) {
+  InodeNum parent; /**< The inode number of the parent of the file */
+  ReqContext context; /**< The context of the operation */
+  FIM_STRUCT_END(31090, RmdirFim, 0);
+};
+
+/**
+ * Fim part for the mknod file operation.  The filename should be in
+ * tail buffer, and must be null-terminated.  DS groups are also in
+ * tail buffer, after the filename (occupying the last
+ * (sizeof(GroupId) * num_ds_groups) bytes).  This is empty (with
+ * num_ds_groups = 0) except for replication requests.  Replied by
+ * CreateReplyFim.
+ */
+DEFINE_FIM_CLASS_STRUCT(31100, MknodFim, 0) {
+  InodeNum inode; /**< The inode number of the directory to hold the file */
+  ReqContext context; /**< The context of the operation */
+  InodeNum new_inode; /**< The inode number of the node */
+  uint64_t mode; /**< File type and mode of the device node to create */
+  uint64_t rdev; /**< The device number, in case it is a device */
+  uint16_t num_ds_groups; /**< Number of DS groups in request */
+  FIM_STRUCT_END(31100, MknodFim, 0);
+};
+
+/* ===== Fim's for file operations, type 32000-32999. ===== */
+
+/**
+ * Fim part for the open file operation.  Replied with DataReplyFim,
+ * containing the group numbers of the file in tail buffer.
+ */
+DEFINE_FIM_CLASS_STRUCT(32000, OpenFim, 0) {
+  InodeNum inode; /**< The inode number of the file to open */
+  ReqContext context; /**< The context of the operation */
+  int32_t flags;  /**< File open flags */
+  FIM_STRUCT_END(32000, OpenFim, 0);
+};
+
+/**
+ * Fim part for the access file operation.  Replied with
+ * ResultCodeReplyFim, containing whether the file access can be
+ * granted.
+ */
+DEFINE_FIM_CLASS_STRUCT(32001, AccessFim, 0) {
+  InodeNum inode; /**< The inode number of the file to check access */
+  ReqContext context; /**< The context of the operation */
+  int32_t mask;  /**< File mask */
+  FIM_STRUCT_END(32001, AccessFim, 0);
+};
+
+/**
+ * Fim part for the write file operation.  Note that this Fim needs
+ * special 16-byte alignment for SSE instructions.
+ */
+DEFINE_FIM_CLASS_STRUCT(32010, WriteFim, 0) {
+  InodeNum inode; /**< The inode number of the file to write */
+  FSTime optime; /**< The last status change time of the file */
+  uint64_t dsg_off; /**< The offset in the DSG to write */
+  uint64_t last_off; /**< The last offset of the file being written */
+  GroupId target_group; /**< The group ID of the group being read */
+  GroupRole target_role; /**< The role in the group being written */
+  GroupRole checksum_role; /**< The role in the group for checksum */
+  uint8_t padding[12]; /**< Make the whole Fim 16-byte aligned for SSE */
+  FIM_STRUCT_END(32010, WriteFim, 0);
+};
+
+/**
+ * Fim part for the checksum update file operation.  Note that this
+ * Fim needs special 16-byte alignment for SSE instructions.
+ */
+DEFINE_FIM_CLASS_STRUCT(32011, ChecksumUpdateFim, 0) {
+  InodeNum inode; /**< The inode number of the file to write */
+  FSTime optime; /**< The last status change time of the file */
+  uint64_t dsg_off; /**< The offset in the DS to write */
+  uint64_t last_off; /**< The last offset of the file being written */
+  uint8_t padding[8]; /**< Make the whole Fim 16-byte aligned for SSE */
+  FIM_STRUCT_END(32011, ChecksumUpdateFim, 0);
+};
+
+/**
+ * Fim part for read file operation.  Replied with DataReplyFim.
+ */
+DEFINE_FIM_CLASS_STRUCT(32020, ReadFim, 0) {
+  InodeNum inode; /**< The inode number of the file to read */
+  uint64_t dsg_off; /**< The offset in the DSG to read */
+  uint32_t size; /**< The number of bytes to read */
+  GroupId target_group; /**< The group ID of the group being read */
+  GroupRole target_role; /**< The role in the group being read */
+  GroupRole checksum_role; /**< The role in the group for checksum */
+  FIM_STRUCT_END(32020, ReadFim, 0);
+};
+
+/**
+ * Fim part for advising MS that file write has taken place on an
+ * inode.  MS use the information to extend the file.
+ */
+DEFINE_FIM_CLASS_STRUCT(32030, AdviseWriteFim, 0) {
+  InodeNum inode; /**< The inode number of the file to write */
+  ReqContext context; /**< The context of the operation */
+  uint64_t off; /**< The last offset of the file being written */
+  FIM_STRUCT_END(32030, AdviseWriteFim, 0);
+};
+
+/**
+ * Fim part for the truncate data operation.
+ */
+DEFINE_FIM_CLASS_STRUCT(32040, TruncateDataFim, 0) {
+  InodeNum inode; /**< The inode number of the file to truncate */
+  FSTime optime; /**< The last status change time of the file */
+  uint64_t dsg_off; /**< The target size of the file in DSG */
+  uint64_t last_off; /**< The target size of the file */
+  GroupRole target_role; /**< The role in the group being read */
+  GroupRole checksum_role; /**< The role in the group for checksum */
+  FIM_STRUCT_END(32040, TruncateDataFim, 0);
+};
+
+/**
+ * Fim part for decrementing FC's inode open count in MS.  Each open()
+ * has one corresponding release().  This Fim is sent only by the last
+ * release() call.
+ */
+DEFINE_FIM_CLASS_STRUCT(32050, ReleaseFim, 0) {
+  InodeNum inode; /**< The inode number of the inode */
+  char keep_read; /**< Whether the client keeps read permission */
+  char clean; /**< Whether nothing has been written since open */
+  FIM_STRUCT_END(32050, ReleaseFim, 0);
+};
+
+/**
+ * Fim part for the free data file operation.
+ */
+DEFINE_FIM_CLASS_STRUCT(32060, FreeDataFim, 0) {
+  InodeNum inode; /**< The inode number of the data file to free */
+  FIM_STRUCT_END(32060, FreeDataFim, 0);
+};
+
+/**
+ * Fim part for the opendir operation.
+ */
+DEFINE_FIM_CLASS_STRUCT(32070, OpendirFim, 0) {
+  InodeNum inode; /**< The inode number of the directory to open */
+  ReqContext context; /**< The context of the operation */
+  FIM_STRUCT_END(32070, OpendirFim, 0);
+};
+
+/**
+ * Fim part for updating DS data file mtime.
+ */
+DEFINE_FIM_CLASS_STRUCT(32080, MtimeUpdateFim, 0) {
+  InodeNum inode; /**< The inode number of the file to update */
+  FSTime mtime; /**< The new mtime */
+  FIM_STRUCT_END(32080, MtimeUpdateFim, 0);
+};
+
+/**
+ * Fim part for setting xattr. The tail buffer stores the attribute name
+ * and value.
+ */
+DEFINE_FIM_CLASS_STRUCT(32090, SetxattrFim, 0) {
+  InodeNum inode; /**< The inode number of the file to set */
+  ReqContext context; /**< The context of the operation */
+  uint64_t name_len; /**< The length of the attribute name, including '\0' */
+  uint64_t value_len; /**< The length of the attribute value */
+  uint16_t flags; /**< The flags */
+  FIM_STRUCT_END(32090, SetxattrFim, 0);
+};
+
+/**
+ * Fim part for getting xattr. The tail buffer stores the attribute name
+ */
+DEFINE_FIM_CLASS_STRUCT(32100, GetxattrFim, 0) {
+  InodeNum inode; /**< The inode number of the file to get */
+  ReqContext context; /**< The context of the operation */
+  uint64_t value_len; /**< The length of the attribute value */
+  FIM_STRUCT_END(32100, GetxattrFim, 0);
+};
+
+/**
+ * Fim part for listing xattr
+ */
+DEFINE_FIM_CLASS_STRUCT(32110, ListxattrFim, 0) {
+  InodeNum inode; /**< The inode number of the file to list */
+  ReqContext context; /**< The context of the operation */
+  uint32_t size; /**< The length of the list to retrieve */
+  FIM_STRUCT_END(32110, ListxattrFim, 0);
+};
+
+/**
+ * Fim part for removing xattr. The tail buffer stores the attribute name
+ */
+DEFINE_FIM_CLASS_STRUCT(32120, RemovexattrFim, 0) {
+  InodeNum inode; /**< The inode number of the file to list */
+  ReqContext context; /**< The context of the operation */
+  FIM_STRUCT_END(32120, RemovexattrFim, 0);
+};
 
 }  // namespace cpfs
