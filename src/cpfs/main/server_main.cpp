@@ -361,6 +361,7 @@ IService* BuildMetaServer(const ConfigMgr& configs) {
   ret->set_inode_removal_tracker(removal_tracker);
   store->SetInodeRemovalTracker(removal_tracker);
   ret->set_resync_mgr(ms::MakeResyncMgr(ret.get()));
+  ret->set_ds_completion_checker_set(MakeOpCompletionCheckerSet());
   if (!configs.ms2_host().empty()) {
     ITimeKeeper* time_keeper =
         MakeTimeKeeper(data_dir,
@@ -504,9 +505,7 @@ IService* BuildDataServer(const ConfigMgr& configs) {
   ret->set_degraded_cache(ds::MakeDegradedCache(
       kDegradedCacheSegments));
   ret->set_data_recovery_mgr(ds::MakeDataRecoveryMgr());
-  IOpCompletionCheckerSet* op_completion_checker_set =
-      MakeOpCompletionCheckerSet();
-  ret->set_op_completion_checker_set(op_completion_checker_set);
+  ret->set_op_completion_checker_set(MakeOpCompletionCheckerSet());
   ds::IResyncMgr* resync_mgr = ds::MakeResyncMgr(ret.get());
   resync_mgr->SetShapedSenderMaker(kShapedSenderMaker);
   ret->set_resync_mgr(resync_mgr);

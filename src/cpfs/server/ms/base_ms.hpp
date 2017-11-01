@@ -26,6 +26,7 @@ namespace cpfs {
 
 class ConfigMgr;
 class IFimProcessor;
+class IOpCompletionCheckerSet;
 class IThreadFimProcessor;
 class ITimeKeeper;
 
@@ -245,6 +246,15 @@ class BaseMetaServer : public BaseCpfsServer {
   IResyncMgr* resync_mgr();
 
   /**
+   * @param checker_set The completion checker set for DS operations
+   */
+  void set_ds_completion_checker_set(IOpCompletionCheckerSet* checker_set);
+  /**
+   * @return Completion checker set for DS operations
+   */
+  IOpCompletionCheckerSet* ds_completion_checker_set();
+
+  /**
    * @param meta_dir_reader The meta directory reader to use
    */
   void set_meta_dir_reader(IMetaDirReader* meta_dir_reader);
@@ -388,6 +398,8 @@ class BaseMetaServer : public BaseCpfsServer {
   boost::scoped_ptr<IFailoverMgr> failover_mgr_;
   /** Resync manager */
   boost::scoped_ptr<IResyncMgr> resync_mgr_;
+  /** Completion checker for DS operations */
+  boost::scoped_ptr<IOpCompletionCheckerSet> ds_completion_checker_set_;
   /** Meta directory reader */
   boost::scoped_ptr<IMetaDirReader> meta_dir_reader_;
   /** Time keeper for peer MS last seen */

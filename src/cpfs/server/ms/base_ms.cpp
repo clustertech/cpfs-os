@@ -29,6 +29,7 @@
 #include "io_service_runner.hpp"
 #include "logger.hpp"
 #include "mutex_util.hpp"
+#include "op_completion.hpp"
 #include "shutdown_mgr.hpp"
 #include "thread_fim_processor.hpp"
 #include "time_keeper.hpp"
@@ -293,6 +294,15 @@ void BaseMetaServer::set_resync_mgr(IResyncMgr* mgr) {
 
 IResyncMgr* BaseMetaServer::resync_mgr() {
   return resync_mgr_.get();
+}
+
+void BaseMetaServer::set_ds_completion_checker_set(
+    IOpCompletionCheckerSet* checker_set) {
+  ds_completion_checker_set_.reset(checker_set);
+}
+
+IOpCompletionCheckerSet* BaseMetaServer::ds_completion_checker_set() {
+  return ds_completion_checker_set_.get();
 }
 
 void BaseMetaServer::set_meta_dir_reader(IMetaDirReader* meta_dir_reader) {

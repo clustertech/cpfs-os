@@ -102,6 +102,8 @@ TEST(BaseMSTest, GetSet) {
   EXPECT_EQ(0, ms.failover_mgr());
   ms.set_resync_mgr(0);
   EXPECT_EQ(0, ms.resync_mgr());
+  ms.set_ds_completion_checker_set(0);
+  EXPECT_EQ(0, ms.ds_completion_checker_set());
   ms.set_meta_dir_reader(0);
   EXPECT_EQ(0, ms.meta_dir_reader());
   ms.set_peer_time_keeper(0);

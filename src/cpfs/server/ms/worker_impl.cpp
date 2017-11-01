@@ -41,6 +41,7 @@
 #include "logger.hpp"
 #include "member_fim_processor.hpp"
 #include "mutex_util.hpp"
+#include "op_completion.hpp"
 #include "req_entry.hpp"
 #include "req_entry_impl.hpp"
 #include "req_tracker.hpp"
@@ -1183,6 +1184,7 @@ void Worker::DSTruncate(const FSTime& optime, InodeNum inode,
   FileCoordManager coord_mgr(inode, group_ids.data(), group_ids.size());
   std::vector<Segment> segments;
   coord_mgr.GetAllGroupEnd(size, &segments);
+  ms()->ds_completion_checker_set()->Get(inode)->RegisterOp(&coord_mgr);
   std::vector<boost::shared_ptr<IReqEntry> > req_entries;
   for (unsigned i = 0; i < segments.size(); ++i) {
     GroupId group = segments[i].dsg;
@@ -1215,6 +1217,7 @@ void Worker::DSTruncate(const FSTime& optime, InodeNum inode,
     try {
       (*it)->WaitReply();  // Original
     } catch (std::runtime_error) {}  // ignore
+  ms()->ds_completion_checker_set()->CompleteOp(inode, &coord_mgr);
 }
 
 void Worker::DSMtime(const FSTime& optime, InodeNum inode,
