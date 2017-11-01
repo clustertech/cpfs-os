@@ -43,19 +43,19 @@ class ReqCompletionChecker : public IReqCompletionChecker {
     // Wait until object mutex is unlocked before proceeding to
     // destroy the checker.  This allows code to delete the checker
     // safely by (1) ensure that nobody is going to call further
-    // RegisterReq(), (2) call OnCompleteAll(), registering a callback
+    // RegisterOp(), (2) call OnCompleteAll(), registering a callback
     // to do (3), (3) when callback is called, notify another thread
     // that the checker is available for deletion, and (4) delete the
     // checker in that other thread.  Note that another thread must be
     // used to delete the checker, because otherwise the deletion
-    // thread will block, making CompleteReq() block as well and we
-    // end up into a deadlock.
+    // thread will block, making CompleteOp() block as well and we end
+    // up into a deadlock.
     {
       MUTEX_LOCK_GUARD(obj_mutex_);
     }
   }
-  void RegisterReq(const boost::shared_ptr<IReqEntry>& req_entry);
-  void CompleteReq(const boost::shared_ptr<IReqEntry>& req_entry);
+  void RegisterOp(const void* op);
+  void CompleteOp(const void* op);
   void OnCompleteAll(ReqCompletionCallback callback);
   bool AllCompleted();
 
@@ -83,28 +83,25 @@ class ReqCompletionChecker : public IReqCompletionChecker {
   MUTEX_TYPE obj_mutex_; /**< Prevent object destruction */
   MUTEX_TYPE data_mutex_; /**< Protect data below */
   CheckerEntryList entries_; /**< Entries kept */
-  boost::unordered_map<boost::shared_ptr<IReqEntry>,
-                       CheckerEntryList::iterator> req_entry_map_;
+  boost::unordered_map<const void*, CheckerEntryList::iterator> op_map_;
 };
 
-void ReqCompletionChecker::RegisterReq(
-    const boost::shared_ptr<IReqEntry>& req_entry) {
+void ReqCompletionChecker::RegisterOp(const void* op) {
   MUTEX_LOCK_GUARD(data_mutex_);
   if (entries_.empty() || !entries_.front().callbacks.empty())
     entries_.push_front(CheckerEntry());
   ++entries_.front().num_pending;
-  req_entry_map_[req_entry] = entries_.begin();
+  op_map_[op] = entries_.begin();
 }
 
-void ReqCompletionChecker::CompleteReq(
-    const boost::shared_ptr<IReqEntry>& req_entry) {
+void ReqCompletionChecker::CompleteOp(const void* op) {
   MUTEX_LOCK_GUARD(obj_mutex_);
   {
     MUTEX_LOCK_GUARD(data_mutex_);
-    if (req_entry_map_.find(req_entry) == req_entry_map_.end())
+    if (op_map_.find(op) == op_map_.end())
       return;
-    --req_entry_map_[req_entry]->num_pending;
-    req_entry_map_.erase(req_entry);
+    --op_map_[op]->num_pending;
+    op_map_.erase(op);
   }
   while (true) {
     ReqCompletionCallback callback;
@@ -299,7 +296,7 @@ void ReqCompletionCheckerSet::AckReq(
     MapType::iterator it = data_.find(inode);
     if (it == data_.end())
       return;
-    it->second->CompleteReq(req_entry);
+    it->second->CompleteOp(req_entry.get());
   }
   Clean(inode);
 }

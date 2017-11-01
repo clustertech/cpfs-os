@@ -72,8 +72,8 @@ typedef MockFunction<void(const boost::shared_ptr<IReqEntry>&)>
 MockAckCallback;
 
 template <typename TVal>
-bool EqWhenRun(TVal p1, TVal* p2) {
-  return p1 == *p2;
+bool EqWhenRun(const void* p1, TVal* p2) {
+  return p1 == p2->get();
 }
 
 class DSWorkerTest : public ::testing::Test {
@@ -186,7 +186,7 @@ class DSWorkerTest : public ::testing::Test {
         .WillOnce(Return(
             boost::bind(&MockAckCallback::Call, ack_callback, _1)));
     EXPECT_CALL(*req_completion_checker_,
-                RegisterReq(Truly(boost::bind(
+                RegisterOp(Truly(boost::bind(
                     &EqWhenRun<boost::shared_ptr<IReqEntry> >,
                     _1, req_entry))));
   }

@@ -26,33 +26,37 @@ class IFimSocket;
 typedef boost::function<void()> ReqCompletionCallback;
 
 /**
- * Allow a handler to be executed if all registered requests are
- * replied.
+ * Allow a handler to be executed if all registered operations are completed.
+ *
+ * The name ReqCompletionChecker reflects the usual usage that the
+ * operations are requests being replicated.  But the class may be
+ * used for other operations as well.
  */
 class IReqCompletionChecker {
  public:
   virtual ~IReqCompletionChecker() {}
 
   /**
-   * Register a request to be checked for completion.
+   * Register an operation to be checked for completion.
    *
-   * @param req_entry The request to register
+   * @param op An object representing the operation to register
    */
-  virtual void RegisterReq(const boost::shared_ptr<IReqEntry>& req_entry) = 0;
+  virtual void RegisterOp(const void* op) = 0;
 
   /**
-   * Signal the completion of a request.
+   * Signal the completion of an operation.
    *
-   * @param req_entry The request to signal completion
+   * @param op The operation completed
    */
-  virtual void CompleteReq(const boost::shared_ptr<IReqEntry>& req_entry) = 0;
+  virtual void CompleteOp(const void* op) = 0;
 
   /**
-   * Register a callback to run once all previously registered
-   * requests are replied.  If there is no request registered, the
-   * method will run synchronously.  Otherwise it will run by the
-   * thread calling the AddReply() method of the request tracker
-   * causing it to become true.
+   * Register a callback to run once all previously registered ops complete.
+   *
+   * If there is no operations registered, the method will run
+   * synchronously.  Otherwise it will run by the thread calling the
+   * AddReply() method of the request tracker causing it to become
+   * true.
    *
    * @param callback The callback to call when that happen
    */
@@ -83,13 +87,17 @@ class IReqCompletionCheckerSet {
   virtual boost::shared_ptr<IReqCompletionChecker> Get(InodeNum inode) = 0;
 
   /**
+   * Get a callback for request tracker AddRequest().
+   *
    * Get a callback suitable to be passed to AddRequest() method of
    * the request tracker for a request to support completion checking.
-   * The existence of a copy of such callback does not stop the
-   * completion checker from being removed, so one must call Get() to
-   * get hold of a reference to the completion checker before calling
-   * this.  When the method is called, it optionally sends a final
-   * reply to the originator, and marks the request as completed.
+   * The address of the request entry object should be used to call
+   * RegisterOp().  The existence of a copy of such callback does not
+   * stop the completion checker from being removed, so one must call
+   * Get() to get hold of a reference to the completion checker before
+   * calling this.  When the method is called, it optionally sends a
+   * final reply to the originator, and marks the request as
+   * completed.
    *
    * @param inode The inode number
    *

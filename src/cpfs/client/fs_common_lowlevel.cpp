@@ -260,7 +260,7 @@ bool FSCommonLL::Write(
         GetReqAckCallback(inode, boost::shared_ptr<IFimSocket>());
     entry->OnAck(boost::bind(&FSCommonLL::WriteAckCallback,
                              this, _1, fh, ack_callback), true);
-    checker->RegisterReq(entry);
+    checker->RegisterOp(entry.get());
   }
   return true;
 }

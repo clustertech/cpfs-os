@@ -41,7 +41,7 @@ TEST(ReqCompletionTest, BasicRun) {
     boost::shared_ptr<IReqCompletionChecker> checker =
         checker_set->Get(3);
     callback = checker_set->GetReqAckCallback(3, fim_socket);
-    checker->RegisterReq(req_entry);
+    checker->RegisterOp(req_entry.get());
   }
   boost::weak_ptr<IReqCompletionChecker> w_checker(checker_set->Get(3));
 
@@ -88,7 +88,7 @@ TEST(ReqCompletionTest, NoRequestFound) {
       checker_set->Get(3);
 
   // Simple case, complete unregistered request, nothing should happen
-  checker->CompleteReq(boost::make_shared<MockIReqEntry>());
+  checker->CompleteOp(0);
 
   // Checker already cleaned
   boost::shared_ptr<MockIFimSocket> fim_socket(new MockIFimSocket);
@@ -127,10 +127,10 @@ TEST(ReqCompletionTest, OnComplete) {
     boost::shared_ptr<IReqCompletionChecker> checker = checker_set->Get(3);
     callback1 = checker_set->GetReqAckCallback(
         3, boost::shared_ptr<IFimSocket>());
-    checker->RegisterReq(req_entry1);
+    checker->RegisterOp(req_entry1.get());
     callback2 = checker_set->GetReqAckCallback(
         3, boost::shared_ptr<IFimSocket>());
-    checker->RegisterReq(req_entry2);
+    checker->RegisterOp(req_entry2.get());
   }
   checker_set->OnCompleteAll(3, boost::bind(GetMockCall(cb), &cb));
   callback1(req_entry1);
@@ -159,11 +159,11 @@ TEST(ReqCompletionTest, OnCompleteAllGlobal) {
     boost::shared_ptr<IReqCompletionChecker> checker1 = checker_set->Get(3);
     callback1 = checker_set->GetReqAckCallback(
         3, boost::shared_ptr<IFimSocket>());
-    checker1->RegisterReq(req_entry1);
+    checker1->RegisterOp(req_entry1.get());
     boost::shared_ptr<IReqCompletionChecker> checker2 = checker_set->Get(4);
     callback2 = checker_set->GetReqAckCallback(
         4, boost::shared_ptr<IFimSocket>());
-    checker2->RegisterReq(req_entry2);
+    checker2->RegisterOp(req_entry2.get());
   }
   checker_set->OnCompleteAllGlobal(boost::bind(GetMockCall(cb), &cb));
   callback1(req_entry1);
@@ -198,15 +198,15 @@ TEST(ReqCompletionTest, OnCompleteAllSubset) {
     boost::shared_ptr<IReqCompletionChecker> checker1 = checker_set->Get(3);
     callback1 = checker_set->GetReqAckCallback(
         3, boost::shared_ptr<IFimSocket>());
-    checker1->RegisterReq(req_entry1);
+    checker1->RegisterOp(req_entry1.get());
     boost::shared_ptr<IReqCompletionChecker> checker2 = checker_set->Get(4);
     callback2 = checker_set->GetReqAckCallback(
         4, boost::shared_ptr<IFimSocket>());
-    checker2->RegisterReq(req_entry2);
+    checker2->RegisterOp(req_entry2.get());
     boost::shared_ptr<IReqCompletionChecker> checker3 = checker_set->Get(5);
     callback3 = checker_set->GetReqAckCallback(
         5, boost::shared_ptr<IFimSocket>());
-    checker3->RegisterReq(req_entry3);
+    checker3->RegisterOp(req_entry3.get());
   }
   checker_set->OnCompleteAllSubset(subset, boost::bind(GetMockCall(cb), &cb));
   callback1(req_entry1);

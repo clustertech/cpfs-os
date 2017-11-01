@@ -8,8 +8,8 @@
 namespace cpfs {
 
 #define OBJ_METHODS                                                     \
-  ((RegisterReq, void, (const boost::shared_ptr<IReqEntry>&)))          \
-  ((CompleteReq, void, (const boost::shared_ptr<IReqEntry>&)))          \
+  ((RegisterOp, void, (const void*)))                                   \
+  ((CompleteOp, void, (const void*)))                                   \
   ((OnCompleteAll, void, (ReqCompletionCallback)))                      \
   ((AllCompleted, bool,))
 

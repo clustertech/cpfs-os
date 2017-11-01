@@ -520,7 +520,7 @@ TEST_F(FSCommonLLTest, WriteOneSegment) {
   EXPECT_CALL(*req_completion_checker_set_,
               GetReqAckCallback(5, boost::shared_ptr<IFimSocket>()))
       .WillRepeatedly(Return(boost::bind(&Increment, &num_cb_calls)));
-  EXPECT_CALL(*comp_checker_, RegisterReq(_));
+  EXPECT_CALL(*comp_checker_, RegisterOp(_));
 
   GroupId groups[] = { 7 };
   uint64_t fh = MakeFH(inode, groups, 1);
@@ -574,7 +574,7 @@ TEST_F(FSCommonLLTest, WriteTwoSegments) {
   EXPECT_CALL(*req_completion_checker_set_,
               GetReqAckCallback(5, boost::shared_ptr<IFimSocket>()))
       .Times(2).WillRepeatedly(Return(boost::bind(&Increment, &num_cb_calls)));
-  EXPECT_CALL(*checker, RegisterReq(_))
+  EXPECT_CALL(*checker, RegisterOp(_))
       .Times(2);
 
   GroupId groups[] = { 0 };

@@ -765,7 +765,7 @@ bool Worker::DoWrite(const FIM_PTR<WriteFim>& fim,
         GetReqAckCallback(inode, peer);
     entry->OnAck(boost::bind(&Worker::WriteReplCallback, this, _1,
                              update_fim, ack_callback, distressed_));
-    checker->RegisterReq(entry);
+    checker->RegisterOp(entry.get());
     return false;
   } else {
     SendFinalReply(fim->req_id(), peer);
@@ -1153,7 +1153,7 @@ bool Worker::HandleTruncateData(
     if (tracker->AddRequestEntry(entry, &repl_lock)) {
       entry->OnAck(ds()->req_completion_checker_set()->
                    GetReqAckCallback((*fim)->inode, peer));
-      checker->RegisterReq(entry);
+      checker->RegisterOp(entry.get());
     } else {
       SendFinalReply(fim->req_id(), peer);
     }

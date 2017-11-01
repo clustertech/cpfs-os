@@ -1143,7 +1143,7 @@ TEST_F(CpfsFsoTest, Write) {
   EXPECT_CALL(*req_completion_checker_set_,
               GetReqAckCallback(5, boost::shared_ptr<IFimSocket>()))
       .Times(1).WillRepeatedly(Return(boost::bind(&Increment, &num_cb_calls)));
-  EXPECT_CALL(*checker, RegisterReq(_))
+  EXPECT_CALL(*checker, RegisterOp(_))
       .Times(1);
   EXPECT_CALL(*mock_fuse_method_, ReplyWrite(fuse_req_, 1024));
 
