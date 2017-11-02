@@ -14,7 +14,6 @@
 
 #include "common.hpp"
 #include "fim.hpp"
-#include "req_entry.hpp"
 
 /**
  * @file
@@ -24,6 +23,7 @@
 
 namespace cpfs {
 
+class IReqEntry;
 class IReqTracker;
 
 namespace client {
@@ -495,13 +495,12 @@ class FSCommonLL : public IFSCommonLL {
    *
    * @param entry The entry containing the WriteFim that the FC sent
    *
-   * @param fh The FUSE handle associated with the file being written
+   * @param inode The inode number of the WriteFim
    *
-   * @param callback The callback to notify completion of file write
+   * @param fh The FUSE handle associated with the file being written
    */
   void WriteAckCallback(
-      const boost::shared_ptr<IReqEntry>& entry, uint64_t fh,
-      ReqAckCallback callback);
+      const boost::shared_ptr<IReqEntry>& entry, InodeNum inode, uint64_t fh);
 };
 
 }  // namespace client

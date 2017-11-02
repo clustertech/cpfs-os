@@ -16,7 +16,6 @@
 #include <vector>
 
 #include <boost/bind.hpp>
-#include <boost/function.hpp>
 #include <boost/scoped_ptr.hpp>
 
 #include "ds_iface.hpp"
@@ -40,9 +39,6 @@
 #include "client/inode_usage.hpp"
 
 namespace cpfs {
-
-class IFimSocket;
-
 namespace client {
 
 void FSCommonLL::SetClient(BaseFSClient* client) {
@@ -256,10 +252,8 @@ bool FSCommonLL::Write(
     boost::shared_ptr<IReqEntry> entry = MakeDefaultReqEntry(tracker, rfim);
     boost::unique_lock<MUTEX_TYPE> lock;
     tracker->GetReqLimiter()->Send(entry, &lock);
-    ReqAckCallback ack_callback = client_->req_completion_checker_set()->
-        GetReqAckCallback(inode, boost::shared_ptr<IFimSocket>());
     entry->OnAck(boost::bind(&FSCommonLL::WriteAckCallback,
-                             this, _1, fh, ack_callback), true);
+                             this, _1, inode, fh), true);
     checker->RegisterOp(entry.get());
   }
   return true;
@@ -429,15 +423,14 @@ boost::shared_ptr<IReqTracker> FSCommonLL::GetDSTracker(
 }
 
 void FSCommonLL::WriteAckCallback(
-    const boost::shared_ptr<IReqEntry>& entry, uint64_t fh,
-    ReqAckCallback callback) {
+    const boost::shared_ptr<IReqEntry>& entry, InodeNum inode, uint64_t fh) {
   const FIM_PTR<IFim>& reply = entry->reply();
   if (reply && reply->type() == kResultCodeReplyFim) {
     ResultCodeReplyFim& efim = static_cast<ResultCodeReplyFim&>(*reply);
     if (efim->err_no)
       FHSetErrno(fh, efim->err_no);
   }
-  callback(entry);
+  client_->req_completion_checker_set()->CompleteOp(inode, entry.get());
 }
 
 }  // namespace client

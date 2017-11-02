@@ -425,15 +425,14 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
    *
    * @param req The checksum update request for the replication
    *
-   * @param ack_callback The normal acknowledgement callback, which
-   * should update the write completion checker and send the reply
+   * @param peer The client socket the original WriteFim is received from
    *
    * @param distress Whether the Write is activated when the worker is
    * distressed
    */
   void WriteReplCallback(const boost::shared_ptr<IReqEntry>& entry,
                          const FIM_PTR<ChecksumUpdateFim>& req,
-                         const ReqAckCallback& ack_callback,
+                         const boost::shared_ptr<IFimSocket>& peer,
                          bool distress);
 
   /**
@@ -512,6 +511,22 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
    * @param segment The segment
    */
   void DoDistressedWriteComplete(InodeNum inode, uint64_t segment);
+
+  /**
+   * Complete the replication operation.
+   *
+   * @param entry The request entry of the write / truncate operation
+   *
+   * @param peer The peer to send the reply to
+   *
+   * @param inode The inode number involved
+   */
+  void CompleteReplOp(const boost::shared_ptr<IReqEntry>& entry,
+                      const boost::shared_ptr<IFimSocket>& peer,
+                      InodeNum inode) {
+    SendFinalReply(entry->req_id(), peer);
+    ds()->req_completion_checker_set()->CompleteOp(inode, entry.get());
+  }
 };
 
 void ResyncDeferment::ResetDefer() {
@@ -761,10 +776,8 @@ bool Worker::DoWrite(const FIM_PTR<WriteFim>& fim,
   replier.reset();  // Reply first, replicate later to avoid race condition
   boost::shared_ptr<IReqEntry> entry = MakeReplReqEntry(tracker, update_fim);
   if (tracker->AddRequestEntry(entry, &repl_lock)) {
-    ReqAckCallback ack_callback = ds()->req_completion_checker_set()->
-        GetReqAckCallback(inode, peer);
     entry->OnAck(boost::bind(&Worker::WriteReplCallback, this, _1,
-                             update_fim, ack_callback, distressed_));
+                             update_fim, peer, distressed_));
     checker->RegisterOp(entry.get());
     return false;
   } else {
@@ -790,10 +803,9 @@ class RevertWriteMemo : public WorkerMemo {
    */
   FIM_PTR<ChecksumUpdateFim> checksum_update_req;
   /**
-   * The callback to call to notify the completion of the write
-   * request
+   * The client socket the original WriteFim is received from
    */
-  ReqAckCallback ack_callback;
+  boost::shared_ptr<IFimSocket> peer;
   /**
    * Whether the write is done in distress mode
    */
@@ -803,7 +815,7 @@ class RevertWriteMemo : public WorkerMemo {
 // Called by the communication thread
 void Worker::WriteReplCallback(const boost::shared_ptr<IReqEntry>& entry,
                                const FIM_PTR<ChecksumUpdateFim>& req,
-                               const ReqAckCallback& ack_callback,
+                               const boost::shared_ptr<IFimSocket>& peer,
                                bool distress) {
   FIM_PTR<IFim> reply = entry->reply();
   bool defer = false;
@@ -816,7 +828,7 @@ void Worker::WriteReplCallback(const boost::shared_ptr<IReqEntry>& entry,
           boost::make_shared<RevertWriteMemo>();
       memo->req_entry = entry;
       memo->checksum_update_req = req;
-      memo->ack_callback = ack_callback;
+      memo->peer = peer;
       memo->distress = distress;
       PutMemo((*revert_fim)->memo_id, memo);
       Enqueue(revert_fim, boost::shared_ptr<IFimSocket>());
@@ -824,7 +836,7 @@ void Worker::WriteReplCallback(const boost::shared_ptr<IReqEntry>& entry,
     }
   }
   if (!defer) {
-    ack_callback(entry);
+    CompleteReplOp(entry, peer, (*req)->inode);
     if (distress) {
       FIM_PTR<DistressedWriteCompletionFim> completion_fim =
           DistressedWriteCompletionFim::MakePtr();
@@ -850,7 +862,7 @@ bool Worker::HandleRevertWrite(const FIM_PTR<RevertWriteFim>& fim,
       (*cu_fim)->inode, (*cu_fim)->optime,
       (*cu_fim)->last_off, DsgToDataOffset((*cu_fim)->dsg_off),
       cu_fim->tail_buf(), cu_fim->tail_buf_size(), false);
-  rw_memo->ack_callback(rw_memo->req_entry);
+  CompleteReplOp(rw_memo->req_entry, rw_memo->peer, (*cu_fim)->inode);
   if (rw_memo->distress)
     DoDistressedWriteComplete((*cu_fim)->inode,
                               (*cu_fim)->dsg_off / kSegmentSize);
@@ -1151,8 +1163,8 @@ bool Worker::HandleTruncateData(
     boost::shared_ptr<IReqEntry> entry =
         MakeReplReqEntry(tracker, update_fim);
     if (tracker->AddRequestEntry(entry, &repl_lock)) {
-      entry->OnAck(ds()->req_completion_checker_set()->
-                   GetReqAckCallback((*fim)->inode, peer));
+      entry->OnAck(boost::bind(&Worker::CompleteReplOp, this, _1, peer,
+                               (*fim)->inode));
       checker->RegisterOp(entry.get());
     } else {
       SendFinalReply(fim->req_id(), peer);

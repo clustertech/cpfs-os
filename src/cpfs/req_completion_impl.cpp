@@ -3,7 +3,7 @@
 /**
  * @file
  *
- * Implementation of request completion checking facilities.
+ * Implementation of request/operation completion checking facilities.
  */
 
 #include "req_completion_impl.hpp"
@@ -19,13 +19,9 @@
 #include <boost/unordered_map.hpp>
 
 #include "common.hpp"
-#include "fim.hpp"
-#include "fim_socket.hpp"
-#include "fims.hpp"
 #include "inode_map.hpp"
 #include "mutex_util.hpp"
 #include "req_completion.hpp"
-#include "req_entry.hpp"
 
 namespace cpfs {
 
@@ -210,11 +206,15 @@ class ReqCompletionCheckerSet : public IReqCompletionCheckerSet,
     return operator[](inode);
   }
 
-  ReqAckCallback GetReqAckCallback(
-      InodeNum inode,
-      const boost::shared_ptr<IFimSocket>& originator) {
-    return boost::bind(&ReqCompletionCheckerSet::AckReq, this,
-                       inode, originator, _1);
+  void CompleteOp(InodeNum inode, const void* op) {
+    {
+      MUTEX_LOCK_GUARD(data_mutex_);
+      MapType::iterator it = data_.find(inode);
+      if (it == data_.end())
+        return;
+      it->second->CompleteOp(op);
+    }
+    Clean(inode);
   }
 
   void OnCompleteAll(InodeNum inode, ReqCompletionCallback callback) {
@@ -268,38 +268,7 @@ class ReqCompletionCheckerSet : public IReqCompletionCheckerSet,
   bool IsUnused(const boost::shared_ptr<ReqCompletionChecker>& elt) const {
     return elt->AllCompleted();
   }
-
- private:
-  /**
-   * The request ack callback returned by GetReqAckCallback
-   *
-   * @param inode The inode number
-   *
-   * @param req_entry The entry acknowledged
-   */
-  void AckReq(InodeNum inode, const boost::shared_ptr<IFimSocket>& originator,
-              const boost::shared_ptr<IReqEntry>& req_entry);
 };
-
-void ReqCompletionCheckerSet::AckReq(
-    InodeNum inode,
-    const boost::shared_ptr<IFimSocket>& originator,
-    const boost::shared_ptr<IReqEntry>& req_entry) {
-  if (originator) {
-    FIM_PTR<FinalReplyFim> final_reply = FinalReplyFim::MakePtr();
-    final_reply->set_req_id(req_entry->req_id());
-    final_reply->set_final();
-    originator->WriteMsg(final_reply);
-  }
-  {
-    MUTEX_LOCK_GUARD(data_mutex_);
-    MapType::iterator it = data_.find(inode);
-    if (it == data_.end())
-      return;
-    it->second->CompleteOp(req_entry.get());
-  }
-  Clean(inode);
-}
 
 }  // namespace
 

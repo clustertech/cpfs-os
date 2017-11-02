@@ -5,7 +5,7 @@
 /**
  * @file
  *
- * Define request completion checking facilities.
+ * Define request/operation completion checking facilities.
  */
 
 #include <vector>
@@ -14,7 +14,6 @@
 #include <boost/shared_ptr.hpp>
 
 #include "common.hpp"
-#include "req_entry.hpp"
 
 namespace cpfs {
 
@@ -87,27 +86,16 @@ class IReqCompletionCheckerSet {
   virtual boost::shared_ptr<IReqCompletionChecker> Get(InodeNum inode) = 0;
 
   /**
-   * Get a callback for request tracker AddRequest().
+   * Complete an operation.
    *
-   * Get a callback suitable to be passed to AddRequest() method of
-   * the request tracker for a request to support completion checking.
-   * The address of the request entry object should be used to call
-   * RegisterOp().  The existence of a copy of such callback does not
-   * stop the completion checker from being removed, so one must call
-   * Get() to get hold of a reference to the completion checker before
-   * calling this.  When the method is called, it optionally sends a
-   * final reply to the originator, and marks the request as
-   * completed.
+   * Notify operation completion for the checker of an inode, and
+   * remove the completion checker if it is safe to do so.
    *
    * @param inode The inode number
    *
-   * @param originator The originator of the request.  If not empty,
-   * this socket will receive a final reply when the callback is
-   * called
+   * @param op The operation completed
    */
-  virtual ReqAckCallback GetReqAckCallback(
-      InodeNum inode,
-      const boost::shared_ptr<IFimSocket>& originator) = 0;
+  virtual void CompleteOp(InodeNum inode, const void* op) = 0;
 
   /**
    * Register a callback to run once all previously registered

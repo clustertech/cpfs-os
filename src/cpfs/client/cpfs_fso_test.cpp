@@ -61,9 +61,6 @@ using ::testing::StartsWith;
 using ::testing::StrEq;
 
 namespace cpfs {
-
-class IFimSocket;
-
 namespace client {
 
 // Explicit instantiate class template to better detect missing coverage
@@ -1118,14 +1115,6 @@ TEST_F(CpfsFsoTest, ReaddirException2) {
   Mock::VerifyAndClear(mock_ms_req_tracker_.get());
 }
 
-void Increment(int* val) {
-  ++*val;
-}
-
-void AckCallback(bool* completed_ret) {
-  *completed_ret = true;
-}
-
 TEST_F(CpfsFsoTest, Write) {
   boost::shared_ptr<MockIReqCompletionChecker> checker(
       new MockIReqCompletionChecker);
@@ -1139,10 +1128,6 @@ TEST_F(CpfsFsoTest, Write) {
   EXPECT_CALL(*req_limiter1_, Send(_, _))
       .WillOnce(DoAll(SaveArg<0>(&entry),
                       Return(true)));
-  int num_cb_calls = 0;
-  EXPECT_CALL(*req_completion_checker_set_,
-              GetReqAckCallback(5, boost::shared_ptr<IFimSocket>()))
-      .Times(1).WillRepeatedly(Return(boost::bind(&Increment, &num_cb_calls)));
   EXPECT_CALL(*checker, RegisterOp(_))
       .Times(1);
   EXPECT_CALL(*mock_fuse_method_, ReplyWrite(fuse_req_, 1024));
@@ -1163,13 +1148,13 @@ TEST_F(CpfsFsoTest, Write) {
   EXPECT_EQ(32768U + 1024U, rfim->last_off);
 
   // Check callback calling
-  EXPECT_EQ(0, num_cb_calls);
+  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(5, _));
+
   FIM_PTR<ResultCodeReplyFim> reply = ResultCodeReplyFim::MakePtr();
   (*reply)->err_no = ENOSPC;
   reply->set_final();
   entry->SetReply(reply, 1);
   Sleep(0.01)();
-  EXPECT_EQ(1, num_cb_calls);
   EXPECT_EQ(ENOSPC, FHGetErrno(fi.fh, false));
 
   // Cleanup

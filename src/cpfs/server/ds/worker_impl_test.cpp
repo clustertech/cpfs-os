@@ -175,16 +175,12 @@ class DSWorkerTest : public ::testing::Test {
 
   void PrepareWriteRepl(InodeNum inode,
                         boost::shared_ptr<IReqEntry>* req_entry,
-                        MockAckCallback* ack_callback,
                         boost::shared_ptr<IFimSocket> peer) {
     EXPECT_CALL(*req_completion_checker_set_, Get(inode))
         .WillOnce(Return(req_completion_checker_));
     EXPECT_CALL(*d_tracker_, AddRequestEntry(_, _))
         .WillOnce(DoAll(SaveArg<0>(req_entry),
                         Return(true)));
-    EXPECT_CALL(*req_completion_checker_set_, GetReqAckCallback(inode, peer))
-        .WillOnce(Return(
-            boost::bind(&MockAckCallback::Call, ack_callback, _1)));
     EXPECT_CALL(*req_completion_checker_,
                 RegisterOp(Truly(boost::bind(
                     &EqWhenRun<boost::shared_ptr<IReqEntry> >,
@@ -192,11 +188,9 @@ class DSWorkerTest : public ::testing::Test {
   }
 
   void DistressTestPrepareProcess(int msg_len,
-                                  boost::shared_ptr<IReqEntry>* req_entry_ret,
-                                  MockAckCallback* ack_callback);
+                                  boost::shared_ptr<IReqEntry>* req_entry_ret);
 
-  void DistressTestCUComplete(boost::shared_ptr<IReqEntry> req_entry,
-                              MockAckCallback* ack_callback);
+  void DistressTestCUComplete(boost::shared_ptr<IReqEntry> req_entry);
 };
 
 TEST_F(DSWorkerTest, WorkerDefer) {
@@ -343,8 +337,7 @@ TEST_F(DSWorkerTest, WriteFim) {
       .WillOnce(SaveArg<0>(&reply));
   PrepareInvalidation(132, 7);
   boost::shared_ptr<IReqEntry> req_entry;
-  MockAckCallback ack_callback;
-  PrepareWriteRepl(132, &req_entry, &ack_callback, c_fim_socket_);
+  PrepareWriteRepl(132, &req_entry, c_fim_socket_);
 
   data_server_.set_dsg_state(1, kDSGReady, 0);
   worker_->Process(fim, c_fim_socket_);
@@ -357,11 +350,16 @@ TEST_F(DSWorkerTest, WriteFim) {
   EXPECT_EQ(ptr, rcs_req.tail_buf());
 
   // On reply
-  EXPECT_CALL(ack_callback, Call(req_entry));
+  FIM_PTR<IFim> freply;
+  EXPECT_CALL(*c_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&freply));
+  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
 
   FIM_PTR<ResultCodeReplyFim> cs_reply = ResultCodeReplyFim::MakePtr();
   (*cs_reply)->err_no = 0;
   req_entry->SetReply(cs_reply, 42);
+  EXPECT_TRUE(freply);
+  EXPECT_TRUE(freply->is_final());
 }
 
 TEST_F(DSWorkerTest, WriteFimError) {
@@ -523,8 +521,7 @@ TEST_F(DSWorkerTest, WriteFimChecksumENOSPC) {
   EXPECT_CALL(*c_fim_socket_, WriteMsg(_));
   PrepareInvalidation(132, 7);
   boost::shared_ptr<IReqEntry> req_entry;
-  MockAckCallback ack_callback;
-  PrepareWriteRepl(132, &req_entry, &ack_callback, c_fim_socket_);
+  PrepareWriteRepl(132, &req_entry, c_fim_socket_);
 
   data_server_.set_dsg_state(1, kDSGReady, 0);
   FIM_PTR<WriteFim> fim = MakeWriteFim(132, 100, 1000, 2, "abcde");
@@ -546,7 +543,10 @@ TEST_F(DSWorkerTest, WriteFimChecksumENOSPC) {
       .WillOnce(DoAll(
           IgnoreResult(Invoke(boost::bind(&std::memcpy, cs_updated, _5, 6))),
           Return(6)));
-  EXPECT_CALL(ack_callback, Call(req_entry));
+  FIM_PTR<IFim> freply;
+  EXPECT_CALL(*c_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&freply));
+  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
 
   worker_->Process(revert_fim, boost::shared_ptr<IFimSocket>());
   EXPECT_STREQ(change, cs_updated);
@@ -557,23 +557,22 @@ TEST_F(DSWorkerTest, WriteFimChecksumENOSPC) {
 
 void DSWorkerTest::DistressTestPrepareProcess(
     int msg_len,
-    boost::shared_ptr<IReqEntry>* req_entry_ret,
-    MockAckCallback* ack_callback) {
+    boost::shared_ptr<IReqEntry>* req_entry_ret) {
   EXPECT_CALL(*store_, Write(132, _, 1000, 100, _, msg_len, _))
       .WillOnce(Return(msg_len));
-  EXPECT_CALL(*c_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*c_fim_socket_, WriteMsg(_)).RetiresOnSaturation();
   PrepareInvalidation(132, 7);
-  PrepareWriteRepl(132, req_entry_ret, ack_callback, c_fim_socket_);
+  PrepareWriteRepl(132, req_entry_ret, c_fim_socket_);
 }
 
 void DSWorkerTest::DistressTestCUComplete(
-    boost::shared_ptr<IReqEntry> req_entry,
-    MockAckCallback* ack_callback) {
+    boost::shared_ptr<IReqEntry> req_entry) {
   FIM_PTR<IFim> cfim;
   EXPECT_CALL(queuer_, Process(_, boost::shared_ptr<IFimSocket>()))
       .WillOnce(DoAll(SaveArg<0>(&cfim),
                       Return(true)));
-  EXPECT_CALL(*ack_callback, Call(req_entry));
+  EXPECT_CALL(*c_fim_socket_, WriteMsg(_)).RetiresOnSaturation();
+  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
 
   FIM_PTR<ResultCodeReplyFim> cs_reply = ResultCodeReplyFim::MakePtr();
   (*cs_reply)->err_no = 0;
@@ -592,8 +591,7 @@ TEST_F(DSWorkerTest, DistressedReadBasic) {
 
   // Handling of the first write is done immediately
   boost::shared_ptr<IReqEntry> req_entry1;
-  MockAckCallback ack_callback1;
-  DistressTestPrepareProcess(1, &req_entry1, &ack_callback1);
+  DistressTestPrepareProcess(1, &req_entry1);
 
   worker_->Process(MakeWriteFim(132, 100, 1000, 2, ""), c_fim_socket_);
 
@@ -612,7 +610,7 @@ TEST_F(DSWorkerTest, DistressedReadBasic) {
       .WillOnce(Return(0));
   EXPECT_CALL(*c_fim_socket_, WriteMsg(_));
 
-  DistressTestCUComplete(req_entry1, &ack_callback1);
+  DistressTestCUComplete(req_entry1);
 }
 
 TEST_F(DSWorkerTest, DistressedWriteBasic) {
@@ -626,8 +624,7 @@ TEST_F(DSWorkerTest, DistressedWriteBasic) {
 
   // Handling of the first write is done immediately
   boost::shared_ptr<IReqEntry> req_entry1;
-  MockAckCallback ack_callback1;
-  DistressTestPrepareProcess(1, &req_entry1, &ack_callback1);
+  DistressTestPrepareProcess(1, &req_entry1);
 
   worker_->Process(MakeWriteFim(132, 100, 1000, 2, ""), c_fim_socket_);
 
@@ -637,24 +634,21 @@ TEST_F(DSWorkerTest, DistressedWriteBasic) {
 
   // On reply and notification, trigger next Fim processing
   boost::shared_ptr<IReqEntry> req_entry2;
-  MockAckCallback ack_callback2;
-  DistressTestPrepareProcess(2, &req_entry2, &ack_callback2);
+  DistressTestPrepareProcess(2, &req_entry2);
 
-  DistressTestCUComplete(req_entry1, &ack_callback1);
+  DistressTestCUComplete(req_entry1);
 
   // On reply and notification, trigger next Fim processing
   boost::shared_ptr<IReqEntry> req_entry3;
-  MockAckCallback ack_callback3;
-  DistressTestPrepareProcess(3, &req_entry3, &ack_callback3);
+  DistressTestPrepareProcess(3, &req_entry3);
 
-  DistressTestCUComplete(req_entry2, &ack_callback2);
+  DistressTestCUComplete(req_entry2);
 
   // On reply and notification, allow immediate send again
-  DistressTestCUComplete(req_entry3, &ack_callback3);
+  DistressTestCUComplete(req_entry3);
 
   boost::shared_ptr<IReqEntry> req_entry4;
-  MockAckCallback ack_callback4;
-  DistressTestPrepareProcess(4, &req_entry4, &ack_callback4);
+  DistressTestPrepareProcess(4, &req_entry4);
 
   worker_->Process(MakeWriteFim(132, 100, 1000, 2, "abc"), c_fim_socket_);
 
@@ -663,8 +657,7 @@ TEST_F(DSWorkerTest, DistressedWriteBasic) {
   worker_->Process(dfim, c_fim_socket_);
 
   boost::shared_ptr<IReqEntry> req_entry5;
-  MockAckCallback ack_callback5;
-  DistressTestPrepareProcess(5, &req_entry5, &ack_callback5);
+  DistressTestPrepareProcess(5, &req_entry5);
 
   worker_->Process(MakeWriteFim(132, 100, 1000, 2, "abcd"), c_fim_socket_);
 }
@@ -680,8 +673,7 @@ TEST_F(DSWorkerTest, DistressedWriteEndClearance) {
 
   // Handling of the first write is done immediately
   boost::shared_ptr<IReqEntry> req_entry1;
-  MockAckCallback ack_callback1;
-  DistressTestPrepareProcess(1, &req_entry1, &ack_callback1);
+  DistressTestPrepareProcess(1, &req_entry1);
 
   worker_->Process(MakeWriteFim(132, 100, 1000, 2, ""), c_fim_socket_);
 
@@ -690,8 +682,7 @@ TEST_F(DSWorkerTest, DistressedWriteEndClearance) {
 
   // Clear completely the queue upon switch to non-distress
   boost::shared_ptr<IReqEntry> req_entry2;
-  MockAckCallback ack_callback2;
-  DistressTestPrepareProcess(2, &req_entry2, &ack_callback2);
+  DistressTestPrepareProcess(2, &req_entry2);
 
   (*dfim)->distress = 0;
   worker_->Process(dfim, c_fim_socket_);
@@ -708,8 +699,7 @@ TEST_F(DSWorkerTest, DistressedWriteWithErr) {
 
   // Handling of the first write is done immediately
   boost::shared_ptr<IReqEntry> req_entry1;
-  MockAckCallback ack_callback1;
-  DistressTestPrepareProcess(1, &req_entry1, &ack_callback1);
+  DistressTestPrepareProcess(1, &req_entry1);
 
   worker_->Process(MakeWriteFim(132, 100, 1000, 2, ""), c_fim_socket_);
 
@@ -725,7 +715,7 @@ TEST_F(DSWorkerTest, DistressedWriteWithErr) {
   EXPECT_CALL(*c_fim_socket_, WriteMsg(_))
       .Times(2);
 
-  DistressTestCUComplete(req_entry1, &ack_callback1);
+  DistressTestCUComplete(req_entry1);
 }
 
 TEST_F(DSWorkerTest, DistressedWriteWithRevert) {
@@ -739,8 +729,7 @@ TEST_F(DSWorkerTest, DistressedWriteWithRevert) {
 
   // Handling of the first write is done immediately
   boost::shared_ptr<IReqEntry> req_entry1;
-  MockAckCallback ack_callback1;
-  DistressTestPrepareProcess(1, &req_entry1, &ack_callback1);
+  DistressTestPrepareProcess(1, &req_entry1);
 
   worker_->Process(MakeWriteFim(132, 100, 1000, 2, ""), c_fim_socket_);
 
@@ -752,7 +741,6 @@ TEST_F(DSWorkerTest, DistressedWriteWithRevert) {
   EXPECT_CALL(queuer_, Process(_, boost::shared_ptr<IFimSocket>()))
       .WillOnce(DoAll(SaveArg<0>(&cfim),
                       Return(true)));
-  EXPECT_CALL(ack_callback1, Call(req_entry1));
 
   FIM_PTR<ResultCodeReplyFim> cs_reply = ResultCodeReplyFim::MakePtr();
   (*cs_reply)->err_no = ENOSPC;
@@ -760,9 +748,10 @@ TEST_F(DSWorkerTest, DistressedWriteWithRevert) {
 
   // Revert and arrange the next Fim processing
   EXPECT_CALL(*store_, ApplyDelta(132, _, 1000, 100, _, 1, false));
+  EXPECT_CALL(*c_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
   boost::shared_ptr<IReqEntry> req_entry2;
-  MockAckCallback ack_callback2;
-  DistressTestPrepareProcess(2, &req_entry2, &ack_callback2);
+  DistressTestPrepareProcess(2, &req_entry2);
 
   worker_->Process(cfim, boost::shared_ptr<IFimSocket>());
 }
@@ -777,17 +766,15 @@ TEST_F(DSWorkerTest, DistressedWriteInodeLockUnlock) {
 
   // Handling of the first write is done immediately
   boost::shared_ptr<IReqEntry> req_entry1;
-  MockAckCallback ack_callback1;
-  DistressTestPrepareProcess(1, &req_entry1, &ack_callback1);
+  DistressTestPrepareProcess(1, &req_entry1);
   worker_->Process(MakeWriteFim(132, 100, 1000, 2, ""), c_fim_socket_);
   // Handling of the second write is deferred
   worker_->Process(MakeWriteFim(132, 100, 1000, 2, "a"), c_fim_socket_);
 
   // On reply and notification, trigger next Fim processing
   boost::shared_ptr<IReqEntry> req_entry2;
-  MockAckCallback ack_callback2;
-  DistressTestPrepareProcess(2, &req_entry2, &ack_callback2);
-  DistressTestCUComplete(req_entry1, &ack_callback1);
+  DistressTestPrepareProcess(2, &req_entry2);
+  DistressTestCUComplete(req_entry1);
 
   // Set recovering state, defer all is set
   data_server_.set_dsg_state(1, kDSGRecovering, 2);
@@ -799,7 +786,9 @@ TEST_F(DSWorkerTest, DistressedWriteInodeLockUnlock) {
   EXPECT_CALL(queuer_, Process(_, _))
       .WillOnce(DoAll(SaveArg<0>(&repl_fim),
                       Return(true)));
-  EXPECT_CALL(ack_callback2, Call(req_entry2));
+  EXPECT_CALL(*c_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
+
   FIM_PTR<ResultCodeReplyFim> cs_reply = ResultCodeReplyFim::MakePtr();
   (*cs_reply)->err_no = 0;
   // Trigger WriteReplCallback
@@ -816,21 +805,20 @@ TEST_F(DSWorkerTest, DistressedWriteInodeLockUnlock) {
   ReqCompletionCallback req_completion_callback;
   EXPECT_CALL(*req_completion_checker_, OnCompleteAll(_))
       .WillOnce(SaveArg<0>(&req_completion_callback));
+
   worker_->Process(fim_lock, m_fim_socket_);
 
   // Unlock received
+  EXPECT_CALL(*m_fim_socket_, WriteMsg(_));
+
   FIM_PTR<DSInodeLockFim> fim_unlock(new DSInodeLockFim);
   (*fim_unlock)->inode = 132;
   (*fim_unlock)->lock = 0;
-
-  // Unlock Reply
-  EXPECT_CALL(*m_fim_socket_, WriteMsg(_));
   worker_->Process(fim_unlock, m_fim_socket_);
 
   // Completing DS recovery
   boost::shared_ptr<IReqEntry> req_entry3;
-  MockAckCallback ack_callback3;
-  DistressTestPrepareProcess(3, &req_entry3, &ack_callback3);
+  DistressTestPrepareProcess(3, &req_entry3);
 
   data_server_.set_dsg_state(1, kDSGReady, 0);
   FIM_PTR<DeferResetFim> reset_fim = DeferResetFim::MakePtr();
@@ -1330,8 +1318,7 @@ TEST_F(DSWorkerTest, TruncateDataFimSelf) {  // Truncate offset is myself
       .WillOnce(SaveArg<0>(&reply));
   PrepareInvalidation(inode, kNotClient);
   boost::shared_ptr<IReqEntry> req_entry;
-  MockAckCallback ack_callback;
-  PrepareWriteRepl(inode, &req_entry, &ack_callback, m_fim_socket_);
+  PrepareWriteRepl(inode, &req_entry, m_fim_socket_);
 
   worker_->Process(fim, m_fim_socket_);
   EXPECT_FALSE(reply->is_final());
