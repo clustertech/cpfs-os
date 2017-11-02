@@ -50,8 +50,8 @@
 #include "logger.hpp"
 #include "member_fim_processor.hpp"
 #include "mutex_util.hpp"
+#include "op_completion.hpp"
 #include "posix_fs.hpp"
-#include "req_completion.hpp"
 #include "req_entry.hpp"
 #include "req_entry_impl.hpp"
 #include "req_tracker.hpp"
@@ -256,7 +256,7 @@ class ResyncSender : public IResyncSender {
     }
     server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
     Event ev;
-    server_->req_completion_checker_set()->OnCompleteAllSubset(
+    server_->op_completion_checker_set()->OnCompleteAllSubset(
         pending_inodes_, boost::bind(&Event::Invoke, &ev));
     ev.Wait();
     return pending_inodes_.size();

@@ -172,7 +172,7 @@ Other than the above, the common modules mutex hierarchy are as follows.
   * `req_limiter`
   * `req_tracker`
   * `thread_fim_processor`
-  * `req_completion`
+  * `op_completion`
   * `ds_iface DSFimRedirector`
   * `tracker_mapper`
   * `connector`
@@ -189,8 +189,8 @@ hierarchy needs changing.
   * `authenticator`
   * `connector` -> `authenticator`
   * `ds_iface DSFimRedirector` -> `tracker_mapper`
-  * `dsg_state` -> `req_tracker` -> `req_completion` (in `server/ds/worker`)
-  * `req_completion` -> (#)
+  * `dsg_state` -> `req_tracker` -> `op_completion` (in `server/ds/worker`)
+  * `op_completion` -> (#)
   * `req_limiter` -> `req_tracker`
   * `req_tracker`
   * `tracker_mapper`
@@ -252,4 +252,4 @@ depend on it.  They do not necessitate a mutex hierarchy yet.
 
   * `server/ms/inode_mutex` - recursive locks for inode operations
   * `dsg_state` - reader-writer lock for control
-  * `req_completion` - object liviness mutex
+  * `op_completion` - object liviness mutex

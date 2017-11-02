@@ -41,8 +41,8 @@ TEST(BaseClientTest, GetSet) {
   client.set_cache_mgr(0);
   EXPECT_EQ(0, client.inode_usage_set());
   client.set_inode_usage_set(0);
-  EXPECT_EQ(0, client.req_completion_checker_set());
-  client.set_req_completion_checker_set(0);
+  EXPECT_EQ(0, client.op_completion_checker_set());
+  client.set_op_completion_checker_set(0);
   EXPECT_EQ(0, client.cleaner());
   client.set_cleaner(0);
   EXPECT_EQ(0, client.runner());

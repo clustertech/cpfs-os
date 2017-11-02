@@ -5,7 +5,7 @@
 /**
  * @file
  *
- * Define request/operation completion checking facilities.
+ * Define operation completion checking facilities.
  */
 
 #include <vector>
@@ -22,18 +22,14 @@ class IFimSocket;
 /**
  * Callback method type.
  */
-typedef boost::function<void()> ReqCompletionCallback;
+typedef boost::function<void()> OpCompletionCallback;
 
 /**
  * Allow a handler to be executed if all registered operations are completed.
- *
- * The name ReqCompletionChecker reflects the usual usage that the
- * operations are requests being replicated.  But the class may be
- * used for other operations as well.
  */
-class IReqCompletionChecker {
+class IOpCompletionChecker {
  public:
-  virtual ~IReqCompletionChecker() {}
+  virtual ~IOpCompletionChecker() {}
 
   /**
    * Register an operation to be checked for completion.
@@ -54,27 +50,26 @@ class IReqCompletionChecker {
    *
    * If there is no operations registered, the method will run
    * synchronously.  Otherwise it will run by the thread calling the
-   * AddReply() method of the request tracker causing it to become
-   * true.
+   * CompleteOp() method.
    *
    * @param callback The callback to call when that happen
    */
-  virtual void OnCompleteAll(ReqCompletionCallback callback) = 0;
+  virtual void OnCompleteAll(OpCompletionCallback callback) = 0;
 
   /**
-   * Check whether all registered requests have been completed.
+   * Check whether all registered operations have completed.
    */
   virtual bool AllCompleted() = 0;
 };
 
 /**
- * Represent a set of IReqCompletionChecker's indexed by inode numbers
+ * Represent a set of IOpCompletionChecker's indexed by inode numbers
  * created as necessary.  The completion checkers may be removed after
  * they are no longer used.
  */
-class IReqCompletionCheckerSet {
+class IOpCompletionCheckerSet {
  public:
-  virtual ~IReqCompletionCheckerSet() {}
+  virtual ~IOpCompletionCheckerSet() {}
 
   /**
    * Get a completion checker.  When a copy of the returned shared
@@ -83,7 +78,7 @@ class IReqCompletionCheckerSet {
    *
    * @param inode The inode number
    */
-  virtual boost::shared_ptr<IReqCompletionChecker> Get(InodeNum inode) = 0;
+  virtual boost::shared_ptr<IOpCompletionChecker> Get(InodeNum inode) = 0;
 
   /**
    * Complete an operation.
@@ -99,42 +94,39 @@ class IReqCompletionCheckerSet {
 
   /**
    * Register a callback to run once all previously registered
-   * requests of an inode is replied.  If there is no request
+   * operations of an inode is replied.  If there is no operation
    * registered, the method will run synchronously.  Otherwise it will
-   * run by the thread calling the AddReply() method of the request
-   * tracker causing it to become true.
+   * run by the thread calling the CompleteOp() method.
    *
    * @param inode The inode
    *
    * @param callback The callback to call when that happen
    */
   virtual void OnCompleteAll(InodeNum inode,
-                             ReqCompletionCallback callback) = 0;
+                             OpCompletionCallback callback) = 0;
 
   /**
    * Register a callback to run once all previously registered
-   * requests of all inodes are replied.  If there is no request
+   * operations of all inodes are replied.  If there is no operation
    * registered, the method will run synchronously.  Otherwise it will
-   * run by the thread calling the AddReply() method of the request
-   * tracker causing it to become true.
+   * run by the thread calling the CompleteOp() method.
    *
    * @param callback The callback to call when that happen
    */
-  virtual void OnCompleteAllGlobal(ReqCompletionCallback callback) = 0;
+  virtual void OnCompleteAllGlobal(OpCompletionCallback callback) = 0;
 
   /**
    * Register a callback to run once all previously registered
-   * requests of all inodes in a subset are replied.  If there is no
-   * request registered, the method will run synchronously.  Otherwise
-   * it will run by the thread calling the AddReply() method of the
-   * request tracker causing it to become true.
+   * operations of all inodes in a subset are replied.  If there is no
+   * operation registered, the method will run synchronously.  Otherwise
+   * it will run by the thread calling the CompleteOp() method.
    *
    * @param subset The subset of inodes to wait
    *
    * @param callback The callback to call when that happen
    */
   virtual void OnCompleteAllSubset(
-      const std::vector<InodeNum>& subset, ReqCompletionCallback callback) = 0;
+      const std::vector<InodeNum>& subset, OpCompletionCallback callback) = 0;
 };
 
 }  // namespace cpfs

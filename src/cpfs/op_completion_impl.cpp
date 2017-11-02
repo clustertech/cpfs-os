@@ -3,10 +3,10 @@
 /**
  * @file
  *
- * Implementation of request/operation completion checking facilities.
+ * Implementation of operation completion checking facilities.
  */
 
-#include "req_completion_impl.hpp"
+#include "op_completion_impl.hpp"
 
 #include <list>
 #include <vector>
@@ -21,21 +21,21 @@
 #include "common.hpp"
 #include "inode_map.hpp"
 #include "mutex_util.hpp"
-#include "req_completion.hpp"
+#include "op_completion.hpp"
 
 namespace cpfs {
 
 namespace {
 
 /**
- * Implement the IReqCompletionChecker interface.
+ * Implement the IOpCompletionChecker interface.
  */
-class ReqCompletionChecker : public IReqCompletionChecker {
+class OpCompletionChecker : public IOpCompletionChecker {
  public:
-  ReqCompletionChecker()
+  OpCompletionChecker()
       : obj_mutex_(MUTEX_INIT),  // Separate the two for different mutex ID
         data_mutex_(MUTEX_INIT) {}
-  ~ReqCompletionChecker() {
+  ~OpCompletionChecker() {
     // Wait until object mutex is unlocked before proceeding to
     // destroy the checker.  This allows code to delete the checker
     // safely by (1) ensure that nobody is going to call further
@@ -52,7 +52,7 @@ class ReqCompletionChecker : public IReqCompletionChecker {
   }
   void RegisterOp(const void* op);
   void CompleteOp(const void* op);
-  void OnCompleteAll(ReqCompletionCallback callback);
+  void OnCompleteAll(OpCompletionCallback callback);
   bool AllCompleted();
 
  private:
@@ -60,12 +60,12 @@ class ReqCompletionChecker : public IReqCompletionChecker {
    * An entry kept by the checker.
    */
   struct CheckerEntry {
-    int num_pending; /**< Number of pending requests */
+    int num_pending; /**< Number of pending operations */
     /**
      * Completion callbacks to run when num_pending is 0 and it is the
      * first entry.
      */
-    std::list<ReqCompletionCallback> callbacks;
+    std::list<OpCompletionCallback> callbacks;
 
     CheckerEntry() : num_pending(0) {}
   };
@@ -82,7 +82,7 @@ class ReqCompletionChecker : public IReqCompletionChecker {
   boost::unordered_map<const void*, CheckerEntryList::iterator> op_map_;
 };
 
-void ReqCompletionChecker::RegisterOp(const void* op) {
+void OpCompletionChecker::RegisterOp(const void* op) {
   MUTEX_LOCK_GUARD(data_mutex_);
   if (entries_.empty() || !entries_.front().callbacks.empty())
     entries_.push_front(CheckerEntry());
@@ -90,7 +90,7 @@ void ReqCompletionChecker::RegisterOp(const void* op) {
   op_map_[op] = entries_.begin();
 }
 
-void ReqCompletionChecker::CompleteOp(const void* op) {
+void OpCompletionChecker::CompleteOp(const void* op) {
   MUTEX_LOCK_GUARD(obj_mutex_);
   {
     MUTEX_LOCK_GUARD(data_mutex_);
@@ -100,7 +100,7 @@ void ReqCompletionChecker::CompleteOp(const void* op) {
     op_map_.erase(op);
   }
   while (true) {
-    ReqCompletionCallback callback;
+    OpCompletionCallback callback;
     {  // Call each callback without holding the mutex
       MUTEX_LOCK_GUARD(data_mutex_);
       if (entries_.empty())
@@ -119,7 +119,7 @@ void ReqCompletionChecker::CompleteOp(const void* op) {
   }
 }
 
-void ReqCompletionChecker::OnCompleteAll(ReqCompletionCallback callback) {
+void OpCompletionChecker::OnCompleteAll(OpCompletionCallback callback) {
   {
     MUTEX_LOCK_GUARD(data_mutex_);
     if (!entries_.empty()) {
@@ -130,7 +130,7 @@ void ReqCompletionChecker::OnCompleteAll(ReqCompletionCallback callback) {
   callback();
 }
 
-bool ReqCompletionChecker::AllCompleted() {
+bool OpCompletionChecker::AllCompleted() {
   MUTEX_LOCK_GUARD(data_mutex_);
   return entries_.empty();
 }
@@ -151,7 +151,7 @@ class AllInodesCompletionRec
    * SetCallback() has already been called.  If both are true, call
    * the callback.
    */
-  ReqCompletionCallback GetInodeCompletionCallback() {
+  OpCompletionCallback GetInodeCompletionCallback() {
     MUTEX_LOCK_GUARD(data_mutex_);
     ++num_remain_callbacks_;
     boost::shared_ptr<AllInodesCompletionRec> ptr =
@@ -164,14 +164,14 @@ class AllInodesCompletionRec
    * are called.  If all are already called, the callback is called
    * immediately.
    */
-  void SetCallback(ReqCompletionCallback callback) {
+  void SetCallback(OpCompletionCallback callback) {
     {
       MUTEX_LOCK_GUARD(data_mutex_);
       if (num_remain_callbacks_ > 0) {
         callback_ = callback;
         return;
       }
-      callback_ = ReqCompletionCallback();
+      callback_ = OpCompletionCallback();
     }
     if (callback)
       callback();
@@ -180,16 +180,16 @@ class AllInodesCompletionRec
  private:
   MUTEX_TYPE data_mutex_; /**< Protect data below */
   int num_remain_callbacks_; /**< Number of callbacks yet to be called */
-  ReqCompletionCallback callback_; /**< The callback set */
+  OpCompletionCallback callback_; /**< The callback set */
 
   void InodeCompletion() {
-    ReqCompletionCallback callback;
+    OpCompletionCallback callback;
     {
       MUTEX_LOCK_GUARD(data_mutex_);
       if (--num_remain_callbacks_ > 0)
         return;
       callback = callback_;
-      callback_ = ReqCompletionCallback();
+      callback_ = OpCompletionCallback();
     }
     if (callback)
       callback();
@@ -197,12 +197,12 @@ class AllInodesCompletionRec
 };
 
 /**
- * Implement the IReqCompletionCheckerSet interface.
+ * Implement the IOpCompletionCheckerSet interface.
  */
-class ReqCompletionCheckerSet : public IReqCompletionCheckerSet,
-                                InodeMap<ReqCompletionChecker> {
+class OpCompletionCheckerSet : public IOpCompletionCheckerSet,
+                                InodeMap<OpCompletionChecker> {
  public:
-  boost::shared_ptr<IReqCompletionChecker> Get(InodeNum inode) {
+  boost::shared_ptr<IOpCompletionChecker> Get(InodeNum inode) {
     return operator[](inode);
   }
 
@@ -217,9 +217,9 @@ class ReqCompletionCheckerSet : public IReqCompletionCheckerSet,
     Clean(inode);
   }
 
-  void OnCompleteAll(InodeNum inode, ReqCompletionCallback callback) {
-    boost::shared_ptr<IReqCompletionChecker> checker =
-        InodeMap<ReqCompletionChecker>::Get(inode);
+  void OnCompleteAll(InodeNum inode, OpCompletionCallback callback) {
+    boost::shared_ptr<IOpCompletionChecker> checker =
+        InodeMap<OpCompletionChecker>::Get(inode);
     if (checker) {
       checker->OnCompleteAll(callback);
       Clean(inode);
@@ -228,7 +228,7 @@ class ReqCompletionCheckerSet : public IReqCompletionCheckerSet,
     callback();
   }
 
-  void OnCompleteAllGlobal(ReqCompletionCallback callback) {
+  void OnCompleteAllGlobal(OpCompletionCallback callback) {
     boost::shared_ptr<AllInodesCompletionRec> rec
         = boost::make_shared<AllInodesCompletionRec>();
     {
@@ -240,7 +240,7 @@ class ReqCompletionCheckerSet : public IReqCompletionCheckerSet,
   }
 
   virtual void OnCompleteAllSubset(
-      const std::vector<InodeNum>& subset, ReqCompletionCallback callback) {
+      const std::vector<InodeNum>& subset, OpCompletionCallback callback) {
     boost::shared_ptr<AllInodesCompletionRec> rec
         = boost::make_shared<AllInodesCompletionRec>();
     {
@@ -265,19 +265,19 @@ class ReqCompletionCheckerSet : public IReqCompletionCheckerSet,
    *
    * @return Whether the element is considered unused
    */
-  bool IsUnused(const boost::shared_ptr<ReqCompletionChecker>& elt) const {
+  bool IsUnused(const boost::shared_ptr<OpCompletionChecker>& elt) const {
     return elt->AllCompleted();
   }
 };
 
 }  // namespace
 
-IReqCompletionChecker* MakeReqCompletionChecker() {
-  return new ReqCompletionChecker;
+IOpCompletionChecker* MakeOpCompletionChecker() {
+  return new OpCompletionChecker;
 }
 
-IReqCompletionCheckerSet* MakeReqCompletionCheckerSet() {
-  return new ReqCompletionCheckerSet;
+IOpCompletionCheckerSet* MakeOpCompletionCheckerSet() {
+  return new OpCompletionCheckerSet;
 }
 
 }  // namespace cpfs

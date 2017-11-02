@@ -37,7 +37,7 @@
 #include "logger.hpp"
 #include "member_fim_processor.hpp"
 #include "mutex_util.hpp"
-#include "req_completion.hpp"
+#include "op_completion.hpp"
 #include "req_entry.hpp"
 #include "req_entry_impl.hpp"
 #include "req_tracker.hpp"
@@ -525,7 +525,7 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
                       const boost::shared_ptr<IFimSocket>& peer,
                       InodeNum inode) {
     SendFinalReply(entry->req_id(), peer);
-    ds()->req_completion_checker_set()->CompleteOp(inode, entry.get());
+    ds()->op_completion_checker_set()->CompleteOp(inode, entry.get());
   }
 };
 
@@ -639,8 +639,8 @@ bool Worker::HandleDSInodeLock(const FIM_PTR<DSInodeLockFim>& fim,
   ds()->tracer()->Log(__func__, inode, kNotClient);
   if ((*fim)->lock == 1) {
     inode_defer_mgr_->SetLocked(inode, true);
-    boost::shared_ptr<IReqCompletionChecker> checker =
-        ds()->req_completion_checker_set()->Get(inode);
+    boost::shared_ptr<IOpCompletionChecker> checker =
+        ds()->op_completion_checker_set()->Get(inode);
     checker->OnCompleteAll(boost::bind(&Worker::DSInodeLocked,
                                        this, fim, peer));
     // Don't reply
@@ -768,8 +768,8 @@ bool Worker::DoWrite(const FIM_PTR<WriteFim>& fim,
   (*update_fim)->optime = (*fim)->optime;
   (*update_fim)->dsg_off = dsg_off;
   (*update_fim)->last_off = (*fim)->last_off;
-  boost::shared_ptr<IReqCompletionChecker> checker =
-      ds()->req_completion_checker_set()->Get(inode);
+  boost::shared_ptr<IOpCompletionChecker> checker =
+      ds()->op_completion_checker_set()->Get(inode);
   boost::shared_ptr<IReqTracker> tracker = ds()->tracker_mapper()->
       GetDSTracker(ds()->store()->ds_group(), (*fim)->checksum_role);
   replier->SetReplicating();
@@ -1154,8 +1154,8 @@ bool Worker::HandleTruncateData(
     (*update_fim)->optime = (*fim)->optime;
     (*update_fim)->dsg_off = dsg_off;
     (*update_fim)->last_off = (*fim)->last_off;
-    boost::shared_ptr<IReqCompletionChecker> checker =
-        ds()->req_completion_checker_set()->Get((*fim)->inode);
+    boost::shared_ptr<IOpCompletionChecker> checker =
+        ds()->op_completion_checker_set()->Get((*fim)->inode);
     boost::shared_ptr<IReqTracker> tracker = ds()->tracker_mapper()->
         GetDSTracker(ds()->store()->ds_group(), (*fim)->checksum_role);
     replier->SetReplicating();

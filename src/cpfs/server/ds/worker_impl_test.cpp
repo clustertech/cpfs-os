@@ -32,7 +32,7 @@
 #include "log_testlib.hpp"
 #include "logger.hpp"
 #include "mock_actions.hpp"
-#include "req_completion_mock.hpp"
+#include "op_completion_mock.hpp"
 #include "req_entry.hpp"
 #include "req_tracker_mock.hpp"
 #include "tracer_impl.hpp"
@@ -85,11 +85,11 @@ class DSWorkerTest : public ::testing::Test {
   MockICleaner* cleaner_;
   MockITrackerMapper* tracker_mapper_;
   MockICCacheTracker* cache_tracker_;
-  MockIReqCompletionCheckerSet* req_completion_checker_set_;
+  MockIOpCompletionCheckerSet* op_completion_checker_set_;
   MockIDataRecoveryMgr* rec_mgr_;
   MockIDegradedCache* degraded_cache_;
 
-  boost::shared_ptr<MockIReqCompletionChecker> req_completion_checker_;
+  boost::shared_ptr<MockIOpCompletionChecker> op_completion_checker_;
   boost::shared_ptr<MockIReqTracker> c_tracker_;  // For client
   boost::shared_ptr<MockIReqTracker> m_tracker_;  // For MS
   boost::shared_ptr<MockIReqTracker> d_tracker_;  // For DS
@@ -102,7 +102,7 @@ class DSWorkerTest : public ::testing::Test {
   DSWorkerTest()
       : data_server_(ConfigMgr()),
         worker_(MakeWorker()),
-        req_completion_checker_(new MockIReqCompletionChecker),
+        op_completion_checker_(new MockIOpCompletionChecker),
         c_tracker_(new MockIReqTracker),
         m_tracker_(new MockIReqTracker),
         d_tracker_(new MockIReqTracker),
@@ -116,8 +116,8 @@ class DSWorkerTest : public ::testing::Test {
     data_server_.set_cache_tracker(cache_tracker_ = new MockICCacheTracker);
     data_server_.set_data_recovery_mgr(rec_mgr_ = new MockIDataRecoveryMgr);
     data_server_.set_degraded_cache(degraded_cache_ = new MockIDegradedCache);
-    data_server_.set_req_completion_checker_set(
-        req_completion_checker_set_ = new MockIReqCompletionCheckerSet);
+    data_server_.set_op_completion_checker_set(
+        op_completion_checker_set_ = new MockIOpCompletionCheckerSet);
     data_server_.set_tracer(MakeSmallTracer());
     worker_->set_server(&data_server_);
     worker_->SetCacheInvalFunc(
@@ -144,7 +144,7 @@ class DSWorkerTest : public ::testing::Test {
     Mock::VerifyAndClear(m_fim_socket_.get());
     Mock::VerifyAndClear(c_fim_socket_.get());
     Mock::VerifyAndClear(tracker_mapper_);
-    Mock::VerifyAndClear(req_completion_checker_set_);
+    Mock::VerifyAndClear(op_completion_checker_set_);
   }
 
   void PrepareCalls(GroupRole my_role, InodeNum inode) {
@@ -176,12 +176,12 @@ class DSWorkerTest : public ::testing::Test {
   void PrepareWriteRepl(InodeNum inode,
                         boost::shared_ptr<IReqEntry>* req_entry,
                         boost::shared_ptr<IFimSocket> peer) {
-    EXPECT_CALL(*req_completion_checker_set_, Get(inode))
-        .WillOnce(Return(req_completion_checker_));
+    EXPECT_CALL(*op_completion_checker_set_, Get(inode))
+        .WillOnce(Return(op_completion_checker_));
     EXPECT_CALL(*d_tracker_, AddRequestEntry(_, _))
         .WillOnce(DoAll(SaveArg<0>(req_entry),
                         Return(true)));
-    EXPECT_CALL(*req_completion_checker_,
+    EXPECT_CALL(*op_completion_checker_,
                 RegisterOp(Truly(boost::bind(
                     &EqWhenRun<boost::shared_ptr<IReqEntry> >,
                     _1, req_entry))));
@@ -353,7 +353,7 @@ TEST_F(DSWorkerTest, WriteFim) {
   FIM_PTR<IFim> freply;
   EXPECT_CALL(*c_fim_socket_, WriteMsg(_))
       .WillOnce(SaveArg<0>(&freply));
-  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
+  EXPECT_CALL(*op_completion_checker_set_, CompleteOp(132, _));
 
   FIM_PTR<ResultCodeReplyFim> cs_reply = ResultCodeReplyFim::MakePtr();
   (*cs_reply)->err_no = 0;
@@ -404,8 +404,8 @@ TEST_F(DSWorkerTest, WriteFimFailChecksumSending) {
       .WillOnce(DoDefault())
       .WillOnce(SaveArg<0>(&second_reply));
   PrepareInvalidation(132, 7);
-  EXPECT_CALL(*req_completion_checker_set_, Get(132))
-      .WillOnce(Return(req_completion_checker_));
+  EXPECT_CALL(*op_completion_checker_set_, Get(132))
+      .WillOnce(Return(op_completion_checker_));
   EXPECT_CALL(*d_tracker_, AddRequestEntry(_, _))
       .WillOnce(Return(false));
 
@@ -546,7 +546,7 @@ TEST_F(DSWorkerTest, WriteFimChecksumENOSPC) {
   FIM_PTR<IFim> freply;
   EXPECT_CALL(*c_fim_socket_, WriteMsg(_))
       .WillOnce(SaveArg<0>(&freply));
-  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
+  EXPECT_CALL(*op_completion_checker_set_, CompleteOp(132, _));
 
   worker_->Process(revert_fim, boost::shared_ptr<IFimSocket>());
   EXPECT_STREQ(change, cs_updated);
@@ -572,7 +572,7 @@ void DSWorkerTest::DistressTestCUComplete(
       .WillOnce(DoAll(SaveArg<0>(&cfim),
                       Return(true)));
   EXPECT_CALL(*c_fim_socket_, WriteMsg(_)).RetiresOnSaturation();
-  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
+  EXPECT_CALL(*op_completion_checker_set_, CompleteOp(132, _));
 
   FIM_PTR<ResultCodeReplyFim> cs_reply = ResultCodeReplyFim::MakePtr();
   (*cs_reply)->err_no = 0;
@@ -749,7 +749,7 @@ TEST_F(DSWorkerTest, DistressedWriteWithRevert) {
   // Revert and arrange the next Fim processing
   EXPECT_CALL(*store_, ApplyDelta(132, _, 1000, 100, _, 1, false));
   EXPECT_CALL(*c_fim_socket_, WriteMsg(_));
-  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
+  EXPECT_CALL(*op_completion_checker_set_, CompleteOp(132, _));
   boost::shared_ptr<IReqEntry> req_entry2;
   DistressTestPrepareProcess(2, &req_entry2);
 
@@ -787,7 +787,7 @@ TEST_F(DSWorkerTest, DistressedWriteInodeLockUnlock) {
       .WillOnce(DoAll(SaveArg<0>(&repl_fim),
                       Return(true)));
   EXPECT_CALL(*c_fim_socket_, WriteMsg(_));
-  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(132, _));
+  EXPECT_CALL(*op_completion_checker_set_, CompleteOp(132, _));
 
   FIM_PTR<ResultCodeReplyFim> cs_reply = ResultCodeReplyFim::MakePtr();
   (*cs_reply)->err_no = 0;
@@ -800,11 +800,11 @@ TEST_F(DSWorkerTest, DistressedWriteInodeLockUnlock) {
   FIM_PTR<DSInodeLockFim> fim_lock(new DSInodeLockFim);
   (*fim_lock)->inode = 132;
   (*fim_lock)->lock = 1;
-  EXPECT_CALL(*req_completion_checker_set_, Get(132))
-      .WillOnce(Return(req_completion_checker_));
-  ReqCompletionCallback req_completion_callback;
-  EXPECT_CALL(*req_completion_checker_, OnCompleteAll(_))
-      .WillOnce(SaveArg<0>(&req_completion_callback));
+  EXPECT_CALL(*op_completion_checker_set_, Get(132))
+      .WillOnce(Return(op_completion_checker_));
+  OpCompletionCallback op_completion_callback;
+  EXPECT_CALL(*op_completion_checker_, OnCompleteAll(_))
+      .WillOnce(SaveArg<0>(&op_completion_callback));
 
   worker_->Process(fim_lock, m_fim_socket_);
 
@@ -1363,8 +1363,8 @@ TEST_F(DSWorkerTest, TruncateDataFimFailChecksumSending) {
       .WillOnce(DoDefault())
       .WillOnce(SaveArg<0>(&second_reply));
   PrepareInvalidation(inode, kNotClient);
-  EXPECT_CALL(*req_completion_checker_set_, Get(inode))
-      .WillOnce(Return(req_completion_checker_));
+  EXPECT_CALL(*op_completion_checker_set_, Get(inode))
+      .WillOnce(Return(op_completion_checker_));
   EXPECT_CALL(*d_tracker_, AddRequestEntry(_, _))
       .WillOnce(Return(false));
 
@@ -1560,11 +1560,11 @@ TEST_F(DSWorkerTest, LockUnlock) {
   (*fim)->inode = 132;
   (*fim)->lock = 1;
   PrepareCalls(0, 132);
-  EXPECT_CALL(*req_completion_checker_set_, Get(132))
-      .WillOnce(Return(req_completion_checker_));
-  ReqCompletionCallback req_completion_callback;
-  EXPECT_CALL(*req_completion_checker_, OnCompleteAll(_))
-      .WillOnce(SaveArg<0>(&req_completion_callback));
+  EXPECT_CALL(*op_completion_checker_set_, Get(132))
+      .WillOnce(Return(op_completion_checker_));
+  OpCompletionCallback op_completion_callback;
+  EXPECT_CALL(*op_completion_checker_, OnCompleteAll(_))
+      .WillOnce(SaveArg<0>(&op_completion_callback));
 
   worker_->Process(fim, m_fim_socket_);
 
@@ -1573,7 +1573,7 @@ TEST_F(DSWorkerTest, LockUnlock) {
   EXPECT_CALL(*m_fim_socket_, WriteMsg(_))
       .WillOnce(SaveArg<0>(&reply));
 
-  req_completion_callback();
+  op_completion_callback();
   ResultCodeReplyFim& rreply1 = dynamic_cast<ResultCodeReplyFim&>(*reply);
   EXPECT_EQ(0U, rreply1->err_no);
 
@@ -1611,11 +1611,11 @@ TEST_F(DSWorkerTest, LockUnlockAll) {
   (*fim)->inode = 132;
   (*fim)->lock = 1;
   PrepareCalls(0, 132);
-  EXPECT_CALL(*req_completion_checker_set_, Get(132))
-      .WillOnce(Return(req_completion_checker_));
-  ReqCompletionCallback req_completion_callback;
-  EXPECT_CALL(*req_completion_checker_, OnCompleteAll(_))
-      .WillOnce(SaveArg<0>(&req_completion_callback));
+  EXPECT_CALL(*op_completion_checker_set_, Get(132))
+      .WillOnce(Return(op_completion_checker_));
+  OpCompletionCallback op_completion_callback;
+  EXPECT_CALL(*op_completion_checker_, OnCompleteAll(_))
+      .WillOnce(SaveArg<0>(&op_completion_callback));
 
   worker_->Process(fim, m_fim_socket_);
 
@@ -1624,7 +1624,7 @@ TEST_F(DSWorkerTest, LockUnlockAll) {
   EXPECT_CALL(*m_fim_socket_, WriteMsg(_))
       .WillOnce(SaveArg<0>(&reply));
 
-  req_completion_callback();
+  op_completion_callback();
   ResultCodeReplyFim& rreply1 = dynamic_cast<ResultCodeReplyFim&>(*reply);
   EXPECT_EQ(0U, rreply1->err_no);
 

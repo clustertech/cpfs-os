@@ -41,9 +41,9 @@
 #include "io_service_runner_impl.hpp"
 #include "listening_socket_impl.hpp"
 #include "logger.hpp"
+#include "op_completion_impl.hpp"
 #include "periodic_timer_impl.hpp"
 #include "posix_fs_impl.hpp"
-#include "req_completion_impl.hpp"
 #include "shaped_sender_impl.hpp"
 #include "shutdown_mgr.hpp"
 #include "status_dumper.hpp"
@@ -106,7 +106,7 @@
 namespace cpfs {
 
 class IService;
-class IReqCompletionCheckerSet;
+class IOpCompletionCheckerSet;
 class ITimeKeeper;
 
 namespace server {
@@ -504,9 +504,9 @@ IService* BuildDataServer(const ConfigMgr& configs) {
   ret->set_degraded_cache(ds::MakeDegradedCache(
       kDegradedCacheSegments));
   ret->set_data_recovery_mgr(ds::MakeDataRecoveryMgr());
-  IReqCompletionCheckerSet* req_completion_checker_set =
-      MakeReqCompletionCheckerSet();
-  ret->set_req_completion_checker_set(req_completion_checker_set);
+  IOpCompletionCheckerSet* op_completion_checker_set =
+      MakeOpCompletionCheckerSet();
+  ret->set_op_completion_checker_set(op_completion_checker_set);
   ds::IResyncMgr* resync_mgr = ds::MakeResyncMgr(ret.get());
   resync_mgr->SetShapedSenderMaker(kShapedSenderMaker);
   ret->set_resync_mgr(resync_mgr);

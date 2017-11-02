@@ -35,7 +35,7 @@ namespace cpfs {
 class ConfigMgr;
 class IAsioPolicy;
 class IPosixFS;
-class IReqCompletionCheckerSet;
+class IOpCompletionCheckerSet;
 class IThreadFimProcessor;
 class ITimeKeeper;
 
@@ -146,15 +146,15 @@ class BaseDataServer : public BaseCpfsServer {
   IDataRecoveryMgr* data_recovery_mgr();
 
   /**
-   * @param req_completion_checker_set Request completion checker set to use
+   * @param op_completion_checker_set Request completion checker set to use
    */
-  void set_req_completion_checker_set(
-      IReqCompletionCheckerSet* req_completion_checker_set);
+  void set_op_completion_checker_set(
+      IOpCompletionCheckerSet* op_completion_checker_set);
 
   /**
    * @return The data recovery manager being used
    */
-  IReqCompletionCheckerSet* req_completion_checker_set();
+  IOpCompletionCheckerSet* op_completion_checker_set();
 
   /**
    * @param resync_mgr Manager to use for sending resync Fims
@@ -307,7 +307,7 @@ class BaseDataServer : public BaseCpfsServer {
   /** The data recovery manager being used */
   boost::scoped_ptr<IDataRecoveryMgr> data_recovery_mgr_;
   /** Request completion checker set to use */
-  boost::scoped_ptr<IReqCompletionCheckerSet> req_completion_checker_set_;
+  boost::scoped_ptr<IOpCompletionCheckerSet> op_completion_checker_set_;
   /** Send resync Fims */
   boost::scoped_ptr<IResyncMgr> resync_mgr_;
   /** Process DS resync Fims received */

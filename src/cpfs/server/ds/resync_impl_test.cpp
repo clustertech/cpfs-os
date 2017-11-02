@@ -29,8 +29,8 @@
 #include "log_testlib.hpp"
 #include "logger.hpp"
 #include "mock_actions.hpp"
+#include "op_completion_mock.hpp"
 #include "posix_fs_mock.hpp"
-#include "req_completion_mock.hpp"
 #include "req_entry.hpp"
 #include "req_tracker_mock.hpp"
 #include "shaped_sender.hpp"
@@ -77,7 +77,7 @@ class DSResyncTest : public ::testing::Test {
   MockIInodeRemovalTracker* inode_removal_tracker_;
   MockIDurableRange* durable_range_;
   MockIStore* store_;
-  MockIReqCompletionCheckerSet* req_completion_checker_set_;
+  MockIOpCompletionCheckerSet* op_completion_checker_set_;
   MockFunction<void(bool success)> completion_handler_;
   boost::scoped_ptr<IResyncFimProcessor> resync_fim_processor_;
   MockITrackerMapper* tracker_mapper_;
@@ -101,8 +101,8 @@ class DSResyncTest : public ::testing::Test {
         inode_removal_tracker_ = new MockIInodeRemovalTracker);
     server_.set_durable_range(durable_range_ = new MockIDurableRange);
     server_.set_store(store_);
-    server_.set_req_completion_checker_set(
-        req_completion_checker_set_ = new MockIReqCompletionCheckerSet);
+    server_.set_op_completion_checker_set(
+        op_completion_checker_set_ = new MockIOpCompletionCheckerSet);
     server_.set_tracker_mapper(tracker_mapper_ = new MockITrackerMapper);
     server_.set_dsg_ready_time_keeper(
         dsg_ready_time_keeper_ = new MockITimeKeeper);
@@ -208,7 +208,7 @@ TEST_F(DSResyncTest, ResyncSenderFlow) {
   (*reply)->num_inode = 1;
   reinterpret_cast<InodeNum*>(reply->tail_buf())[0] = 5;
   EXPECT_CALL(*thread_group_, EnqueueAll(_)).Times(2);
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllSubset(_, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAllSubset(_, _))
       .Times(2)
       .WillRepeatedly(InvokeArgument<1>());
   FIM_PTR<DSResyncPhaseReplyFim> reply1 =
@@ -370,7 +370,7 @@ TEST_F(DSResyncTest, ResyncSenderOneSmallFile) {
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
                       Return(true)));
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllSubset(_, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAllSubset(_, _))
       .WillRepeatedly(InvokeArgument<1>());
 
   resync_sender_->StartResyncPhase(ds_tracker_);
@@ -419,7 +419,7 @@ TEST_F(DSResyncTest, ResyncSenderTwoFiles) {
       .WillOnce(DoAll(Invoke(boost::bind(&IReqEntry::SetReply, _1, reply, 1)),
                       Return(true)));
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllSubset(_, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAllSubset(_, _))
       .WillRepeatedly(InvokeArgument<1>());
 
   resync_sender_->StartResyncPhase(ds_tracker_);

@@ -24,8 +24,8 @@
 #include "fuseobj.hpp"
 #include "io_service_runner.hpp"
 #include "io_service_runner_impl.hpp"
+#include "op_completion_impl.hpp"
 #include "periodic_timer_impl.hpp"
-#include "req_completion_impl.hpp"
 #include "shutdown_mgr.hpp"
 #include "status_dumper.hpp"
 #include "status_dumper_impl.hpp"
@@ -91,7 +91,7 @@ class FSClient : public BaseFSClient {
     set_ds_fim_processor(ds_proc);
     set_conn_mgr(MakeConnMgr(this, 'F'));
     set_inode_usage_set(MakeInodeUsageSet());
-    set_req_completion_checker_set(MakeReqCompletionCheckerSet());
+    set_op_completion_checker_set(MakeOpCompletionCheckerSet());
     ICleaner* cleaner;
     set_cleaner(cleaner = MakeCleaner(this));
     cleaner->SetPeriodicTimerMaker(kPeriodicTimerMaker);

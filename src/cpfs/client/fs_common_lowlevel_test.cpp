@@ -25,7 +25,7 @@
 #include "finfo.hpp"
 #include "mock_actions.hpp"
 #include "mutex_util.hpp"
-#include "req_completion_mock.hpp"
+#include "op_completion_mock.hpp"
 #include "req_entry_mock.hpp"
 #include "req_limiter_mock.hpp"
 #include "req_tracker_mock.hpp"
@@ -102,11 +102,11 @@ class FSCommonLLTest : public ::testing::Test {
   boost::scoped_ptr<MockIReqLimiter> req_limiter1_;
   boost::shared_ptr<MockIReqTracker> ds_req_tracker2_;
   boost::scoped_ptr<MockIReqLimiter> req_limiter2_;
-  boost::shared_ptr<MockIReqCompletionChecker> comp_checker_;
+  boost::shared_ptr<MockIOpCompletionChecker> comp_checker_;
 
   // The client
   MockICacheMgr* cache_mgr_;
-  MockIReqCompletionCheckerSet* req_completion_checker_set_;
+  MockIOpCompletionCheckerSet* op_completion_checker_set_;
   MockIInodeUsageSet* inode_usage_set_;
   MockITrackerMapper* tracker_mapper_;
   BaseFSClient client_;
@@ -122,13 +122,13 @@ class FSCommonLLTest : public ::testing::Test {
         req_limiter1_(new MockIReqLimiter),
         ds_req_tracker2_(new MockIReqTracker),
         req_limiter2_(new MockIReqLimiter),
-        comp_checker_(new MockIReqCompletionChecker),
+        comp_checker_(new MockIOpCompletionChecker),
         ll_(new FSCommonLL()) {
     // Setup ll object
     client_.set_cache_mgr(cache_mgr_ = new MockICacheMgr);
     client_.set_inode_usage_set(inode_usage_set_ = new MockIInodeUsageSet);
-    client_.set_req_completion_checker_set(
-        req_completion_checker_set_ = new MockIReqCompletionCheckerSet);
+    client_.set_op_completion_checker_set(
+        op_completion_checker_set_ = new MockIOpCompletionCheckerSet);
     client_.set_tracker_mapper(tracker_mapper_ = new MockITrackerMapper);
     ll_->SetClient(&client_);
 
@@ -176,7 +176,7 @@ TEST_F(FSCommonLLTest, Open) {
 }
 
 TEST_F(FSCommonLLTest, OpenTruncate) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> req_fim;
   FIM_PTR<DataReplyFim> reply_fim = MakeGroupDataReply();
@@ -502,7 +502,7 @@ void Increment(int* val) {
 }
 
 TEST_F(FSCommonLLTest, WriteOneSegment) {
-  EXPECT_CALL(*req_completion_checker_set_, Get(5))
+  EXPECT_CALL(*op_completion_checker_set_, Get(5))
       .WillOnce(Return(comp_checker_));
   EXPECT_CALL(*inode_usage_set_, SetDirty(5));
   InodeNum inode = kNumDSPerGroup;
@@ -528,7 +528,7 @@ TEST_F(FSCommonLLTest, WriteOneSegment) {
   EXPECT_EQ(32768U + 1024U, rfim->last_off);
 
   // Check callback calling
-  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(5, _));
+  EXPECT_CALL(*op_completion_checker_set_, CompleteOp(5, _));
 
   FIM_PTR<ResultCodeReplyFim> reply = ResultCodeReplyFim::MakePtr();
   (*reply)->err_no = ENOSPC;
@@ -541,9 +541,9 @@ TEST_F(FSCommonLLTest, WriteOneSegment) {
 }
 
 TEST_F(FSCommonLLTest, WriteTwoSegments) {
-  boost::shared_ptr<MockIReqCompletionChecker> checker(
-      new MockIReqCompletionChecker);
-  EXPECT_CALL(*req_completion_checker_set_, Get(5))
+  boost::shared_ptr<MockIOpCompletionChecker> checker(
+      new MockIOpCompletionChecker);
+  EXPECT_CALL(*op_completion_checker_set_, Get(5))
       .WillOnce(Return(checker));
   EXPECT_CALL(*inode_usage_set_, SetDirty(5));
   InodeNum inode = kNumDSPerGroup;
@@ -584,7 +584,7 @@ TEST_F(FSCommonLLTest, WriteTwoSegments) {
   EXPECT_EQ(32768U + 512U, rfim2->last_off);
   EXPECT_EQ(rfim1->optime, rfim2->optime);
 
-  Mock::VerifyAndClear(req_completion_checker_set_);
+  Mock::VerifyAndClear(op_completion_checker_set_);
 }
 
 TEST_F(FSCommonLLTest, WriteDeferredErr) {
@@ -599,7 +599,7 @@ TEST_F(FSCommonLLTest, WriteDeferredErr) {
 }
 
 TEST_F(FSCommonLLTest, ReleaseReadOnly) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   EXPECT_CALL(*inode_usage_set_, UpdateClosed(3, false, _, _))
       .WillOnce(Return(kClientAccessUnchanged));
@@ -609,7 +609,7 @@ TEST_F(FSCommonLLTest, ReleaseReadOnly) {
 }
 
 TEST_F(FSCommonLLTest, ReleaseReadWrite) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> req_fim;
   EXPECT_CALL(*ms_req_tracker_, AddRequest(_, _))
@@ -626,7 +626,7 @@ TEST_F(FSCommonLLTest, ReleaseReadWrite) {
 }
 
 TEST_F(FSCommonLLTest, GetattrSuccess) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(1, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(1, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> req_fim;
   ReqAckCallback callback;
@@ -649,7 +649,7 @@ TEST_F(FSCommonLLTest, GetattrSuccess) {
 }
 
 TEST_F(FSCommonLLTest, GetattrError) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(1, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(1, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> err_fim = MakeErrorReply(ENOENT);
   PrepareAddRequest(ms_req_tracker_, 0, req_entry1_, err_fim);
@@ -661,7 +661,7 @@ TEST_F(FSCommonLLTest, GetattrError) {
 }
 
 TEST_F(FSCommonLLTest, SetattrSuccess) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> req_fim;
   FIM_PTR<AttrReplyFim> reply_fim = AttrReplyFim::MakePtr();
@@ -703,7 +703,7 @@ TEST_F(FSCommonLLTest, SetattrSuccess) {
 }
 
 TEST_F(FSCommonLLTest, SetattrSuccess2) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> req_fim;
   FIM_PTR<AttrReplyFim> reply_fim = AttrReplyFim::MakePtr();
@@ -734,7 +734,7 @@ TEST_F(FSCommonLLTest, SetattrSuccess2) {
 }
 
 TEST_F(FSCommonLLTest, SetattrError) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> err_fim = MakeErrorReply(EPERM);
   PrepareAddRequest(ms_req_tracker_, 0, req_entry1_, err_fim);
@@ -745,14 +745,14 @@ TEST_F(FSCommonLLTest, SetattrError) {
 }
 
 TEST_F(FSCommonLLTest, Flush) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
 
   ll_->Flush(3);
 }
 
 TEST_F(FSCommonLLTest, Fsync) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
 
   ll_->Fsync(3);

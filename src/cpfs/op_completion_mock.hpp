@@ -3,32 +3,32 @@
 /* Copyright 2013 ClusterTech Ltd */
 
 #include "mock_helper.hpp"
-#include "req_completion.hpp"  // IWYU pragma: export
+#include "op_completion.hpp"  // IWYU pragma: export
 
 namespace cpfs {
 
 #define OBJ_METHODS                                                     \
   ((RegisterOp, void, (const void*)))                                   \
   ((CompleteOp, void, (const void*)))                                   \
-  ((OnCompleteAll, void, (ReqCompletionCallback)))                      \
+  ((OnCompleteAll, void, (OpCompletionCallback)))                      \
   ((AllCompleted, bool,))
 
-class MockIReqCompletionChecker : public IReqCompletionChecker {
+class MockIOpCompletionChecker : public IOpCompletionChecker {
   MAKE_MOCK_METHODS(OBJ_METHODS);
 };
 
 #undef OBJ_METHODS
 
 #define OBJ_METHODS                                                     \
-  ((Get, boost::shared_ptr<IReqCompletionChecker>, (InodeNum)))         \
+  ((Get, boost::shared_ptr<IOpCompletionChecker>, (InodeNum)))          \
   ((CompleteOp, void, (InodeNum)(const void*)))                         \
-  ((OnCompleteAll, void, (InodeNum)(ReqCompletionCallback)))            \
-  ((OnCompleteAllGlobal, void, (ReqCompletionCallback)))                \
+  ((OnCompleteAll, void, (InodeNum)(OpCompletionCallback)))             \
+  ((OnCompleteAllGlobal, void, (OpCompletionCallback)))                 \
   ((OnCompleteAllSubset, void,                                          \
-    (const std::vector<InodeNum>&)(ReqCompletionCallback)))             \
+    (const std::vector<InodeNum>&)(OpCompletionCallback)))              \
   ((Clean, void, (InodeNum)))
 
-class MockIReqCompletionCheckerSet : public IReqCompletionCheckerSet {
+class MockIOpCompletionCheckerSet : public IOpCompletionCheckerSet {
   MAKE_MOCK_METHODS(OBJ_METHODS);
 };
 

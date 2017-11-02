@@ -1,11 +1,9 @@
 /* Copyright 2013 ClusterTech Ltd */
-#include "req_completion_impl.hpp"
+#include "op_completion_impl.hpp"
 
 #include <vector>
 
 #include <boost/bind.hpp>
-#include <boost/function.hpp>
-#include <boost/make_shared.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/weak_ptr.hpp>
@@ -16,7 +14,7 @@
 
 #include "common.hpp"
 #include "mock_actions.hpp"
-#include "req_completion.hpp"
+#include "op_completion.hpp"
 
 namespace cpfs {
 namespace {
@@ -27,8 +25,8 @@ using ::testing::MockFunction;
 using ::testing::Return;
 using ::testing::SaveArg;
 
-TEST(ReqCompletionTest, CheckerBasic) {
-  boost::scoped_ptr<IReqCompletionChecker> checker(MakeReqCompletionChecker());
+TEST(OpCompletionTest, CheckerBasic) {
+  boost::scoped_ptr<IOpCompletionChecker> checker(MakeOpCompletionChecker());
   // Call the completion callback once completed
   MockFunction<void()> cb;
   int op;
@@ -45,8 +43,8 @@ TEST(ReqCompletionTest, CheckerBasic) {
   checker->OnCompleteAll(boost::bind(GetMockCall(cb), &cb));
 }
 
-TEST(ReqCompletionTest, CheckerInterleave) {
-  boost::scoped_ptr<IReqCompletionChecker> checker(MakeReqCompletionChecker());
+TEST(OpCompletionTest, CheckerInterleave) {
+  boost::scoped_ptr<IOpCompletionChecker> checker(MakeOpCompletionChecker());
   int op, op2;
   checker->RegisterOp(&op);
   MockFunction<void()> cb;
@@ -68,13 +66,13 @@ TEST(ReqCompletionTest, CheckerInterleave) {
   checker->CompleteOp(&op2);
 }
 
-TEST(ReqCompletionTest, CheckerSet) {
-  boost::scoped_ptr<IReqCompletionCheckerSet> checker_set(
-      MakeReqCompletionCheckerSet());
+TEST(OpCompletionTest, CheckerSet) {
+  boost::scoped_ptr<IOpCompletionCheckerSet> checker_set(
+      MakeOpCompletionCheckerSet());
   // Call the completion callback once completed
   int op;
   checker_set->Get(3)->RegisterOp(&op);
-  boost::weak_ptr<IReqCompletionChecker> w_checker(checker_set->Get(3));
+  boost::weak_ptr<IOpCompletionChecker> w_checker(checker_set->Get(3));
   MockFunction<void()> cb;
   checker_set->OnCompleteAll(3, boost::bind(GetMockCall(cb), &cb));
   EXPECT_FALSE(w_checker.expired());
@@ -90,9 +88,9 @@ TEST(ReqCompletionTest, CheckerSet) {
   checker_set->OnCompleteAll(3, boost::bind(GetMockCall(cb), &cb));
 }
 
-TEST(ReqCompletionTest, OnCompleteAllGlobal) {
-  boost::scoped_ptr<IReqCompletionCheckerSet> checker_set(
-      MakeReqCompletionCheckerSet());
+TEST(OpCompletionTest, OnCompleteAllGlobal) {
+  boost::scoped_ptr<IOpCompletionCheckerSet> checker_set(
+      MakeOpCompletionCheckerSet());
   MockFunction<void()> cb;
   EXPECT_CALL(cb, Call());
 
@@ -111,9 +109,9 @@ TEST(ReqCompletionTest, OnCompleteAllGlobal) {
   checker_set->CompleteOp(4, &op2);
 }
 
-TEST(ReqCompletionTest, OnCompleteAllSubset) {
-  boost::scoped_ptr<IReqCompletionCheckerSet> checker_set(
-      MakeReqCompletionCheckerSet());
+TEST(OpCompletionTest, OnCompleteAllSubset) {
+  boost::scoped_ptr<IOpCompletionCheckerSet> checker_set(
+      MakeOpCompletionCheckerSet());
   // Before any entry is registered: immediately call the callback
   MockFunction<void()> cb;
   EXPECT_CALL(cb, Call());

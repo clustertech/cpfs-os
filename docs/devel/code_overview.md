@@ -434,8 +434,8 @@ workers.
 At times it is handy to perform some work once we know that all inode
 operations already submitted to an inode is already completed.  This
 is currently needed when we do DS locking (see the corresponding
-section below).  This is done using the `ReqCompletionCheckerSet` (see
-`req_completion.hpp`), where non-atomic inode modifying operations
+section below).  This is done using the `OpCompletionCheckerSet` (see
+`op_completion.hpp`), where non-atomic inode modifying operations
 register themselves to the checker, so that other code may arrange a
 callback to be called when all such operations are completed for an
 inode.  A simplified version is used by the client when we make some
@@ -573,8 +573,8 @@ to be replicated.  At times the DS needs to be "frozen", that new FC
 requests are to be deferred when waiting for old requests to be
 completed.  This is accompanished by the coordination of the `Worker`
 with two abstractions.  Whenever the DS sends a Fim for replication,
-it is registered with the `ReqCompletionCheckerSet` (see
-`server/req_completion.hpp`), which keeps a list of inodes that has
+it is registered with the `OpCompletionCheckerSet` (see
+`op_completion.hpp`), which keeps a list of inodes that has
 incompletion requests.  When a freeze is needed, it waits until all
 registered requests of an inode of the whole system has been
 completed, and use the `FimDeferMgr` (see `server/fim_defer.hpp`) to

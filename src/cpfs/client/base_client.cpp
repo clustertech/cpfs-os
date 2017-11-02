@@ -17,7 +17,7 @@
 #include "fim_processor.hpp"
 #include "io_service_runner.hpp"
 #include "mutex_util.hpp"
-#include "req_completion.hpp"
+#include "op_completion.hpp"
 #include "service.hpp"
 #include "shutdown_mgr.hpp"
 #include "status_dumper.hpp"
@@ -175,15 +175,15 @@ IInodeUsageSet* BaseFSClient::inode_usage_set() {
   return inode_usage_set_.get();
 }
 
-void BaseFSClient::set_req_completion_checker_set(
-    IReqCompletionCheckerSet* checker_set) {
-  req_completion_checker_set_.reset(checker_set);
+void BaseFSClient::set_op_completion_checker_set(
+    IOpCompletionCheckerSet* checker_set) {
+  op_completion_checker_set_.reset(checker_set);
 }
 /**
  * @return The completion checker set to track incomplete operations
  */
-IReqCompletionCheckerSet* BaseFSClient::req_completion_checker_set() {
-  return req_completion_checker_set_.get();
+IOpCompletionCheckerSet* BaseFSClient::op_completion_checker_set() {
+  return op_completion_checker_set_.get();
 }
 
 void BaseFSClient::set_cleaner(ICleaner* cleaner) {

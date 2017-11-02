@@ -32,7 +32,7 @@
 #include "logger.hpp"
 #include "member_fim_processor.hpp"
 #include "mutex_util.hpp"
-#include "req_completion.hpp"
+#include "op_completion.hpp"
 #include "req_tracker.hpp"
 #include "shutdown_mgr.hpp"
 #include "time_keeper.hpp"
@@ -170,7 +170,7 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
         server_->degraded_cache()->SetActive(true);
       } else if ((*fim)->state == kDSGRecovering) {
         server_->set_opt_resync((*fim)->opt_resync);
-        server_->req_completion_checker_set()->OnCompleteAllGlobal(
+        server_->op_completion_checker_set()->OnCompleteAllGlobal(
             boost::bind(&MSCtrlFimProcessor::SetDSGRecovering, this,
                         (*fim)->state_change_id, socket));
         return true;
@@ -178,7 +178,7 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
         server_->degraded_cache()->SetActive(true);
       } else if ((*fim)->state == kDSGShuttingDown) {
         server_->shutdown_mgr()->Init(kShutdownTimeout);
-        server_->req_completion_checker_set()->OnCompleteAllGlobal(
+        server_->op_completion_checker_set()->OnCompleteAllGlobal(
             boost::bind(&MSCtrlFimProcessor::AckDSGStateChange, this,
                         (*fim)->state_change_id, socket));
         return true;

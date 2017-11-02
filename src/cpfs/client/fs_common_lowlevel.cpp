@@ -26,7 +26,7 @@
 #include "finfo.hpp"
 #include "logger.hpp"
 #include "mutex_util.hpp"
-#include "req_completion.hpp"
+#include "op_completion.hpp"
 #include "req_entry.hpp"
 #include "req_entry_impl.hpp"
 #include "req_limiter.hpp"
@@ -222,8 +222,8 @@ bool FSCommonLL::Write(
   ret->deferred_errno = FHGetErrno(fh, true);
   if (ret->deferred_errno)
     return false;
-  boost::shared_ptr<IReqCompletionChecker> checker =
-      client_->req_completion_checker_set()->Get(inode);
+  boost::shared_ptr<IOpCompletionChecker> checker =
+      client_->op_completion_checker_set()->Get(inode);
   ReqContext context;
   // TODO(Joseph): Values below are not referenced, can they be removed?
   // context.uid = uid;
@@ -405,7 +405,7 @@ void FSCommonLL::DoUpdateClosed(InodeNum inode, bool is_write) {
 
 void FSCommonLL::WaitWriteComplete(InodeNum ino) {
   Event ev;
-  client_->req_completion_checker_set()->OnCompleteAll(
+  client_->op_completion_checker_set()->OnCompleteAll(
       ino, boost::bind(&Event::Invoke, &ev));
   ev.Wait();
 }
@@ -430,7 +430,7 @@ void FSCommonLL::WriteAckCallback(
     if (efim->err_no)
       FHSetErrno(fh, efim->err_no);
   }
-  client_->req_completion_checker_set()->CompleteOp(inode, entry.get());
+  client_->op_completion_checker_set()->CompleteOp(inode, entry.get());
 }
 
 }  // namespace client

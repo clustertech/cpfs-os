@@ -31,7 +31,7 @@ class IConnector;
 class IFimProcessor;
 class IIOServiceRunner;
 class IAsioPolicy;
-class IReqCompletionCheckerSet;
+class IOpCompletionCheckerSet;
 class IShutdownMgr;
 class ITrackerMapper;
 
@@ -264,11 +264,11 @@ class BaseFSClient : public BaseClient, public IStatusDumpable {
    *
    * @param checker_set The checker set
    */
-  void set_req_completion_checker_set(IReqCompletionCheckerSet* checker_set);
+  void set_op_completion_checker_set(IOpCompletionCheckerSet* checker_set);
   /**
    * @return The completion checker set to track incomplete operations
    */
-  IReqCompletionCheckerSet* req_completion_checker_set();
+  IOpCompletionCheckerSet* op_completion_checker_set();
 
   /**
    * Set the cleaner to clean cache mgr.
@@ -304,7 +304,7 @@ class BaseFSClient : public BaseClient, public IStatusDumpable {
   boost::scoped_ptr<ICacheMgr> cache_mgr_; /**< Link with kernel cache */
   boost::scoped_ptr<IInodeUsageSet> inode_usage_set_; /**< Track opened files */
   /** Track incomplete operations */
-  boost::scoped_ptr<IReqCompletionCheckerSet> req_completion_checker_set_;
+  boost::scoped_ptr<IOpCompletionCheckerSet> op_completion_checker_set_;
   boost::scoped_ptr<ICleaner> cleaner_; /**< Clean cache mgr */
 
   // Shutdown

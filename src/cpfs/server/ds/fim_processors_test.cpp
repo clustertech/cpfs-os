@@ -25,7 +25,7 @@
 #include "fims.hpp"
 #include "log_testlib.hpp"
 #include "logger.hpp"
-#include "req_completion_mock.hpp"
+#include "op_completion_mock.hpp"
 #include "req_tracker_mock.hpp"
 #include "shutdown_mgr_mock.hpp"
 #include "time_keeper_mock.hpp"
@@ -69,7 +69,7 @@ class DsFimProcessorTest : public ::testing::Test {
   MockIFimProcessor* ds_fim_processor_;
   MockIFimProcessor* fc_fim_processor_;
   MockIDegradedCache* degraded_cache_;
-  MockIReqCompletionCheckerSet* req_completion_checker_set_;
+  MockIOpCompletionCheckerSet* op_completion_checker_set_;
   MockIResyncMgr* resync_mgr_;
   MockIThreadGroup* thread_group_;
   MockITimeKeeper* dsg_ready_time_keeper_;
@@ -100,8 +100,8 @@ class DsFimProcessorTest : public ::testing::Test {
     ds_->set_ds_fim_processor((ds_fim_processor_ = new MockIFimProcessor));
     ds_->set_fc_fim_processor((fc_fim_processor_ = new MockIFimProcessor));
     ds_->set_degraded_cache((degraded_cache_ = new MockIDegradedCache));
-    ds_->set_req_completion_checker_set((req_completion_checker_set_ =
-                                         new MockIReqCompletionCheckerSet));
+    ds_->set_op_completion_checker_set((op_completion_checker_set_ =
+                                        new MockIOpCompletionCheckerSet));
     ds_->set_resync_fim_processor(resync_fim_proc_.get());
     ds_->set_resync_mgr(resync_mgr_ = new MockIResyncMgr);
     ds_->set_thread_group(thread_group_ = new MockIThreadGroup);
@@ -209,7 +209,7 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringOther) {
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*dsg_ready_time_keeper_, Stop());
   boost::function<void()> cb;
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllGlobal(_))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAllGlobal(_))
       .WillOnce(SaveArg<0>(&cb));
 
   // Process Fim, state change immediately
@@ -266,7 +266,7 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringSelf) {
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*dsg_ready_time_keeper_, Stop());
   boost::function<void()> cb;
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllGlobal(_))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAllGlobal(_))
       .WillOnce(SaveArg<0>(&cb));
 
   // Process Fim, state change immediately
@@ -375,7 +375,7 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeShuttingDown) {
   EXPECT_CALL(*dsg_ready_time_keeper_, Stop());
   boost::function<void()> cb;
   EXPECT_CALL(*shutdown_mgr_, Init(_));
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAllGlobal(_))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAllGlobal(_))
       .WillOnce(SaveArg<0>(&cb));
 
   ds_->set_dsg_state(6, kDSGReady, 0);

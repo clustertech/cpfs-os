@@ -73,8 +73,8 @@ TEST(BaseDSTest, GetSet) {
   ds.set_degraded_cache(0);
   EXPECT_EQ(0, ds.data_recovery_mgr());
   ds.set_data_recovery_mgr(0);
-  EXPECT_EQ(0, ds.req_completion_checker_set());
-  ds.set_req_completion_checker_set(0);
+  EXPECT_EQ(0, ds.op_completion_checker_set());
+  ds.set_op_completion_checker_set(0);
   EXPECT_EQ(0, ds.resync_mgr());
   ds.set_resync_mgr(0);
   EXPECT_EQ(0, ds.resync_fim_processor());

@@ -25,8 +25,8 @@
 #include "io_service_runner.hpp"
 #include "logger.hpp"
 #include "mutex_util.hpp"
+#include "op_completion.hpp"
 #include "posix_fs.hpp"
-#include "req_completion.hpp"
 #include "thread_fim_processor.hpp"
 #include "time_keeper.hpp"
 #include "version.hpp"
@@ -150,13 +150,13 @@ IDataRecoveryMgr* BaseDataServer::data_recovery_mgr() {
   return data_recovery_mgr_.get();
 }
 
-void BaseDataServer::set_req_completion_checker_set(
-    IReqCompletionCheckerSet* req_completion_checker_set) {
-  req_completion_checker_set_.reset(req_completion_checker_set);
+void BaseDataServer::set_op_completion_checker_set(
+    IOpCompletionCheckerSet* op_completion_checker_set) {
+  op_completion_checker_set_.reset(op_completion_checker_set);
 }
 
-IReqCompletionCheckerSet* BaseDataServer::req_completion_checker_set() {
-  return req_completion_checker_set_.get();
+IOpCompletionCheckerSet* BaseDataServer::op_completion_checker_set() {
+  return op_completion_checker_set_.get();
 }
 
 void BaseDataServer::set_resync_mgr(IResyncMgr* resync_mgr) {

@@ -30,7 +30,7 @@
 #include "log_testlib.hpp"
 #include "logger.hpp"
 #include "mock_actions.hpp"
-#include "req_completion_mock.hpp"
+#include "op_completion_mock.hpp"
 #include "req_entry_mock.hpp"
 #include "req_limiter_mock.hpp"
 #include "req_tracker_mock.hpp"
@@ -121,7 +121,7 @@ class CpfsFsoTest : public ::testing::Test {
   MockIConnMgr* mock_conn_mgr_;
   MockIOServiceRunner* mock_io_service_runner_;
   MockIInodeUsageSet* inode_usage_set_;
-  MockIReqCompletionCheckerSet* req_completion_checker_set_;
+  MockIOpCompletionCheckerSet* op_completion_checker_set_;
   MockIConnector* connector_;
   struct FakeFuseReq {
     int* ptr;
@@ -165,8 +165,8 @@ class CpfsFsoTest : public ::testing::Test {
     client_.set_service_runner(
         mock_io_service_runner_ = new MockIOServiceRunner);
     client_.set_inode_usage_set(inode_usage_set_ = new MockIInodeUsageSet);
-    client_.set_req_completion_checker_set(
-        req_completion_checker_set_ = new MockIReqCompletionCheckerSet);
+    client_.set_op_completion_checker_set(
+        op_completion_checker_set_ = new MockIOpCompletionCheckerSet);
     client_.set_connector(connector_ = new MockIConnector);
     client_.set_dsg_state(0, kDSGReady, 0);
     client_.set_dsg_state(7, kDSGReady, 0);
@@ -340,7 +340,7 @@ TEST_F(CpfsFsoTest, Init) {
 
 TEST_F(CpfsFsoTest, GetattrSuccess) {
   // Expectation of the Getattr call
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(1, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(1, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> req_fim;
   ReqAckCallback callback;
@@ -371,7 +371,7 @@ TEST_F(CpfsFsoTest, GetattrSuccess) {
 }
 
 TEST_F(CpfsFsoTest, GetattrError) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(1, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(1, _))
       .WillOnce(InvokeArgument<1>());
   ErrorTester et(this, ENOENT);
   cpfs_fuse_obj_.Getattr(fuse_req_, 1, 0);
@@ -379,7 +379,7 @@ TEST_F(CpfsFsoTest, GetattrError) {
 
 TEST_F(CpfsFsoTest, GetattrStrange) {
   // Expectation of the Getattr call
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(1, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(1, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> req_fim;
   FIM_PTR<GetattrFim> strange_fim = GetattrFim::MakePtr();
@@ -401,7 +401,7 @@ TEST_F(CpfsFsoTest, GetattrStrange) {
 }
 
 TEST_F(CpfsFsoTest, SetattrSuccess) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   FIM_PTR<IFim> req_fim;
   FIM_PTR<AttrReplyFim> reply_fim = AttrReplyFim::MakePtr();
@@ -433,7 +433,7 @@ TEST_F(CpfsFsoTest, SetattrSuccess) {
 }
 
 TEST_F(CpfsFsoTest, SetattrError) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   ErrorTester et(this, EPERM);
   struct stat attr;
@@ -806,7 +806,7 @@ TEST_F(CpfsFsoTest, Flush) {
   fi.flags = O_RDWR;
   fi.fh = MakeFH(3, 0, 0);
   FHSetErrno(fi.fh, ENOSPC);
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   EXPECT_CALL(*mock_fuse_method_, ReplyErr(fuse_req_, ENOSPC));
 
@@ -815,7 +815,7 @@ TEST_F(CpfsFsoTest, Flush) {
 }
 
 TEST_F(CpfsFsoTest, Release) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   struct fuse_file_info fi[2];
   fi[0].flags = O_RDONLY;
@@ -828,7 +828,7 @@ TEST_F(CpfsFsoTest, Release) {
 }
 
 TEST_F(CpfsFsoTest, Fsync) {
-  EXPECT_CALL(*req_completion_checker_set_, OnCompleteAll(3, _))
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAll(3, _))
       .WillOnce(InvokeArgument<1>());
   EXPECT_CALL(*mock_fuse_method_, ReplyErr(fuse_req_, 0));
 
@@ -1116,9 +1116,9 @@ TEST_F(CpfsFsoTest, ReaddirException2) {
 }
 
 TEST_F(CpfsFsoTest, Write) {
-  boost::shared_ptr<MockIReqCompletionChecker> checker(
-      new MockIReqCompletionChecker);
-  EXPECT_CALL(*req_completion_checker_set_, Get(5))
+  boost::shared_ptr<MockIOpCompletionChecker> checker(
+      new MockIOpCompletionChecker);
+  EXPECT_CALL(*op_completion_checker_set_, Get(5))
       .WillOnce(Return(checker));
   EXPECT_CALL(*inode_usage_set_, SetDirty(5));
   InodeNum inode = kNumDSPerGroup;
@@ -1148,7 +1148,7 @@ TEST_F(CpfsFsoTest, Write) {
   EXPECT_EQ(32768U + 1024U, rfim->last_off);
 
   // Check callback calling
-  EXPECT_CALL(*req_completion_checker_set_, CompleteOp(5, _));
+  EXPECT_CALL(*op_completion_checker_set_, CompleteOp(5, _));
 
   FIM_PTR<ResultCodeReplyFim> reply = ResultCodeReplyFim::MakePtr();
   (*reply)->err_no = ENOSPC;
@@ -1162,7 +1162,7 @@ TEST_F(CpfsFsoTest, Write) {
 
   Mock::VerifyAndClear(mock_ms_req_tracker_.get());
   Mock::VerifyAndClear(mock_ds_req_tracker1_.get());
-  Mock::VerifyAndClear(req_completion_checker_set_);
+  Mock::VerifyAndClear(op_completion_checker_set_);
 }
 
 TEST_F(CpfsFsoTest, WriteDeferredErr) {
@@ -1183,7 +1183,7 @@ TEST_F(CpfsFsoTest, WriteDeferredErr) {
 
   Mock::VerifyAndClear(mock_ms_req_tracker_.get());
   Mock::VerifyAndClear(mock_ds_req_tracker1_.get());
-  Mock::VerifyAndClear(req_completion_checker_set_);
+  Mock::VerifyAndClear(op_completion_checker_set_);
 }
 
 void CopyIov(struct iovec iov[], unsigned len, std::vector<std::string>* ret) {
