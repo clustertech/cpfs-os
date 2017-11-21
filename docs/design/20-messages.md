@@ -31,7 +31,7 @@ Each FIM has the following 16-byte header.
     larger than the high-order byte, for byte-order detection.
   * `int64_t req_id`.  A request ID will be attached to all FIM, so
     that "response" FIMs can be matched to "request" FIMs of the same
-    connection.  If a FIM needs no response, the request ID -1 may be
+    connection.  If a FIM needs no response, the request ID 0 may be
     used.
 
 After that, it might contain other fields.  E.g.,
