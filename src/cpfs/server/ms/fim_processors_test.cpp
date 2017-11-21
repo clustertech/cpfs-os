@@ -27,6 +27,7 @@
 #include "log_testlib.hpp"
 #include "logger.hpp"
 #include "mock_actions.hpp"
+#include "op_completion_mock.hpp"
 #include "req_tracker_mock.hpp"
 #include "shutdown_mgr_mock.hpp"
 #include "thread_fim_processor_mock.hpp"
@@ -85,6 +86,7 @@ class MSFimProcessorsTest : public ::testing::Test {
   MockIThreadFimProcessor* failover_proc_;
   MockIFailoverMgr* failover_mgr_;
   MockIResyncMgr* resync_mgr_;
+  MockIOpCompletionCheckerSet* ds_completion_checker_set_;
   MockIAsioPolicy* asio_policy_;
   MockIAsioPolicy* fc_asio_policy_;
   MockITimeKeeper* peer_time_keeper_;
@@ -131,6 +133,8 @@ class MSFimProcessorsTest : public ::testing::Test {
     ms_->set_failover_processor(failover_proc_ = new MockIThreadFimProcessor);
     ms_->set_failover_mgr(failover_mgr_ = new MockIFailoverMgr);
     ms_->set_resync_mgr(resync_mgr_ = new MockIResyncMgr);
+    ms_->set_ds_completion_checker_set(
+        ds_completion_checker_set_ = new MockIOpCompletionCheckerSet);
     ms_->set_peer_time_keeper(peer_time_keeper_ = new MockITimeKeeper);
     ms_->set_ha_counter(ha_counter_ = new MockIHACounter);
     ms_->set_inode_removal_tracker(
@@ -892,12 +896,26 @@ TEST_F(MSFimProcessorsTest, MSDSDSResyncPhaseInodeList) {
   EXPECT_CALL(*topology_mgr_, GetDSGState(0, _))
       .WillOnce(DoAll(SetArgPointee<1>(0),
                       Return(kDSGResync)));
+  boost::function<void()> callback;
+  EXPECT_CALL(*ds_completion_checker_set_, OnCompleteAllSubset(_, _))
+      .WillOnce(SaveArg<1>(&callback));
 
   EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket));
   EXPECT_TRUE(ms_->is_dsg_inode_resyncing(0, 42));
   EXPECT_TRUE(ms_->is_dsg_inode_resyncing(0, 43));
   EXPECT_FALSE(ms_->is_dsg_inode_resyncing(0, 41));
   EXPECT_FALSE(ms_->is_dsg_inode_resyncing(1, 42));
+
+  // Upon callback, a SendPhaseInodeListReply is queued
+  FIM_PTR<IFim> reply;
+  EXPECT_CALL(*ds_fim_socket, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&reply));
+
+  callback();
+  EXPECT_EQ(kDSResyncPhaseInodeListReadyFim, reply->type());
+  EXPECT_EQ(fim->tail_buf_size(), reply->tail_buf_size());
+  EXPECT_EQ(0, std::memcmp(fim->tail_buf(), reply->tail_buf(),
+                           fim->tail_buf_size()));
 }
 
 TEST_F(MSFimProcessorsTest, MSResyncReqCombined) {
