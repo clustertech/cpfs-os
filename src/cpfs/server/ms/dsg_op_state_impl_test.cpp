@@ -7,7 +7,7 @@
 #include <boost/function.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
-#include <boost/thread/shared_mutex.hpp>
+#include <boost/thread/thread.hpp>
 
 #include <gmock/gmock.h>
 // IWYU pragma: no_forward_declare testing::MockFunction
@@ -69,17 +69,39 @@ TEST_F(DSGOpStateMgrTest, Completion) {
   callback();
 }
 
+void Register(IDSGOpStateMgr* mgr, InodeNum inode, const void* op) {
+  mgr->RegisterInodeOp(inode, op);
+}
+
 TEST_F(DSGOpStateMgrTest, Resyncing) {
+  // Set resyncing
   std::vector<InodeNum> resyncing;
   resyncing.push_back(2);
   resyncing.push_back(3);
   mgr_->SetDsgInodesResyncing(1, resyncing);
-  {
-    boost::shared_lock<boost::shared_mutex> lock;
-    mgr_->ReadLock(1, &lock);
-    EXPECT_TRUE(mgr_->is_dsg_inode_resyncing(1, 2));
-    EXPECT_FALSE(mgr_->is_dsg_inode_resyncing(1, 4));
-  }
+
+  // Unrelated inode op is not affected
+  int op;
+  EXPECT_CALL(*checker_, RegisterOp(&op));
+
+  Register(mgr_.get(), 4, &op);
+
+  // Related inode op must wait
+  boost::thread th(boost::bind(&Register, mgr_.get(), 2, &op));
+
+  Sleep(0.1)();
+  resyncing.clear();
+  resyncing.push_back(2);
+  resyncing.push_back(4);
+  mgr_->SetDsgInodesResyncing(2, resyncing);
+  resyncing.clear();
+  mgr_->SetDsgInodesResyncing(1, resyncing);
+  Sleep(0.2)();
+
+  EXPECT_CALL(*checker_, RegisterOp(&op));
+
+  mgr_->SetDsgInodesResyncing(2, resyncing);
+  th.join();
 }
 
 }  // namespace

@@ -12,13 +12,15 @@
 #include <iterator>
 #include <vector>
 
+#include <boost/foreach.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
-#include <boost/thread/shared_mutex.hpp>
+#include <boost/thread/condition.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/unordered_set.hpp>
 
 #include "common.hpp"
+#include "logger.hpp"
 #include "mutex_util.hpp"
 #include "op_completion.hpp"
 
@@ -36,9 +38,13 @@ namespace {
  * thus cannot be truncated yet.
  */
 struct DSGOpsState {
-  boost::shared_mutex data_mutex; /**< reader-writer lock for fields below */
   boost::unordered_set<InodeNum> resyncing; /**< inodes is being resynced */
 };
+
+/**
+ * Map from group number to state.
+ */
+typedef boost::unordered_map<GroupId, DSGOpsState> DSGOpsStateMap;
 
 /**
  * Implement the IDSGOpStateMgr interface.
@@ -52,7 +58,29 @@ class DSGOpStateMgr : public IDSGOpStateMgr {
     : completion_checker_set_(checker_set) {}
 
   void RegisterInodeOp(InodeNum inode, const void* op) {
+    MUTEX_LOCK(boost::unique_lock, data_mutex_, data_lock);
+    bool logged = false;
+    while (true) {
+      bool wait = false;
+      BOOST_FOREACH(const DSGOpsStateMap::value_type& item, ops_states_) {
+        if (item.second.resyncing.find(inode) != item.second.resyncing.end()) {
+          wait = true;
+          break;
+        }
+      }
+      if (!wait)
+        break;
+      if (!logged) {
+        logged = true;
+        LOG(informational, Degraded, "Inode op for inode ", PHex(inode),
+            " waits because a resync is in progress");
+      }
+      MUTEX_WAIT(data_lock, wake_);
+    }
     completion_checker_set_->Get(inode)->RegisterOp(op);
+    if (logged)
+      LOG(informational, Degraded, "Inode op for inode ", PHex(inode),
+          " wait completed");
   }
 
   void CompleteInodeOp(InodeNum inode, const void* op) {
@@ -64,35 +92,30 @@ class DSGOpStateMgr : public IDSGOpStateMgr {
     completion_checker_set_->OnCompleteAllSubset(inodes, callback);
   }
 
-  void ReadLock(GroupId group, boost::shared_lock<boost::shared_mutex>* lock) {
-    MUTEX_LOCK_GUARD(data_mutex_);
-    DSGOpsState& ops_state = ops_states_[group];
-    MUTEX_LOCK(boost::shared_lock, ops_state.data_mutex, my_lock);
-    lock->swap(my_lock);
-  }
-
   void SetDsgInodesResyncing(
       GroupId group, const std::vector<InodeNum>& inodes) {
-    MUTEX_LOCK_GUARD(data_mutex_);
-    DSGOpsState& ops_state = ops_states_[group];
-    MUTEX_LOCK(boost::unique_lock, ops_state.data_mutex, my_lock);
-    ops_state.resyncing.clear();
-    std::copy(inodes.begin(), inodes.end(),
-              std::inserter(ops_state.resyncing, ops_state.resyncing.begin()));
-  }
-
-  bool is_dsg_inode_resyncing(GroupId group, InodeNum inode) {
-    MUTEX_LOCK_GUARD(data_mutex_);
-    DSGOpsState& ops_state = ops_states_[group];
-    return ops_state.resyncing.find(inode) != ops_state.resyncing.end();
+    bool need_notify = false;
+    {
+      MUTEX_LOCK_GUARD(data_mutex_);
+      DSGOpsState& ops_state = ops_states_[group];
+      if (ops_state.resyncing.size() > 0) {
+        need_notify = true;
+        ops_state.resyncing.clear();
+      }
+      std::copy(inodes.begin(), inodes.end(),
+                std::inserter(ops_state.resyncing,
+                              ops_state.resyncing.begin()));
+    }
+    if (need_notify)
+      wake_.notify_all();
   }
 
  private:
   /** Completion checker for DS operations */
   boost::scoped_ptr<IOpCompletionCheckerSet> completion_checker_set_;
-  mutable MUTEX_TYPE data_mutex_; /**< Protect fields below */
-  boost::unordered_map<GroupId, DSGOpsState>
-  ops_states_; /**< DSG operation states */
+  MUTEX_TYPE data_mutex_; /**< Protect fields below */
+  boost::condition_variable wake_;  /**< When there is an unlock */
+  DSGOpsStateMap ops_states_; /**< DSG operation states */
 };
 
 }  // namespace

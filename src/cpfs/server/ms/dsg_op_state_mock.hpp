@@ -16,11 +16,8 @@ namespace ms {
   ((CompleteInodeOp, void, (InodeNum)(const void*)))                    \
   ((OnInodesCompleteOp, void,                                           \
     (const std::vector<InodeNum>)(OpCompletionCallback)))               \
-  ((ReadLock, void,                                                     \
-    (GroupId)(boost::shared_lock<boost::shared_mutex>*)))               \
   ((SetDsgInodesResyncing, void,                                        \
-    (GroupId)(const std::vector<InodeNum>&)))                           \
-  ((is_dsg_inode_resyncing, bool, (GroupId)(InodeNum)))
+    (GroupId)(const std::vector<InodeNum>&)))
 
 class MockIDSGOpStateMgr : public IDSGOpStateMgr {
   MAKE_MOCK_METHODS(OBJ_METHODS);
