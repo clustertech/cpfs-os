@@ -494,11 +494,12 @@ IService* BuildDataServer(const ConfigMgr& configs) {
   base_ms_proc->SetTimeKeeper(time_keeper);
   ms_fim_proc->AddFimProcessor(ds::MakeMSCtrlFimProcessor(ret.get()));
   ms_fim_proc->AddFimProcessor(thread_group, true);
+  ms_fim_proc->AddFimProcessor(resync_fim_proc, true);
   CompositeFimProcessor* ds_proc = new CompositeFimProcessor;
   ret->set_ds_fim_processor(ds_proc);
   ds_proc->AddFimProcessor(new BaseFimProcessor);
-  ds_proc->AddFimProcessor(resync_fim_proc, true);
   ds_proc->AddFimProcessor(thread_group, true);
+  ds_proc->AddFimProcessor(resync_fim_proc, true);
   CompositeFimProcessor* fc_proc = new CompositeFimProcessor;
   ret->set_fc_fim_processor(fc_proc);
   fc_proc->AddFimProcessor(new BaseFimProcessor);

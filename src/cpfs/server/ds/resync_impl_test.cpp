@@ -118,6 +118,13 @@ class DSResyncTest : public ::testing::Test {
     Mock::VerifyAndClear(tracker_mapper_);
   }
 
+  // Simple initialization of Fim processor tests.  Initialize all DS
+  // sockets, have them send a DSResyncListFim (without
+  // DSResyncDirFim's), check replies.  Then have them send
+  // DSResyncPhaseFim as well, which are answered according to the
+  // passed dir_iterator, which would control what inodes need resync.
+  // The replies request IDs are written to user-supplied buffers so
+  // that callers can use them after the call.
   void InitFimProcessor(MockIDirIterator* dir_iterator,
                         boost::shared_ptr<MockIFimSocket>* fim_sockets,
                         FIM_PTR<IFim>* fims, uint64_t* req_id) {
@@ -578,6 +585,13 @@ TEST_F(DSResyncTest, ResyncMgrExceptional) {
 }
 
 TEST_F(DSResyncTest, ResyncFimProcessorDisabled) {
+  // Ignore DSResyncPhaseInodeListReadyFim
+  FIM_PTR<DSResyncPhaseInodeListReadyFim> ms_fim =
+      DSResyncPhaseInodeListReadyFim::MakePtr();
+  ms_fim = DSResyncPhaseInodeListReadyFim::MakePtr(sizeof(InodeNum));
+  *(reinterpret_cast<InodeNum*>(ms_fim->tail_buf())) = 4;
+  resync_fim_processor_->Process(ms_fim, ms_fim_socket_);
+
   // Handling of DSResyncFim
   boost::shared_ptr<MockIFimSocket> fim_socket(new MockIFimSocket);
   FIM_PTR<IFim> reply;
@@ -677,15 +691,62 @@ TEST_F(DSResyncTest, ResyncFimProcessorReady) {
   resync_fim_processor_->AsyncResync(boost::bind(
       GetMockCall(completion_handler_), &completion_handler_, _1));
 
-  // Nothing happen before the last DSResyncReadyFim arrives
+  // Initialize
   boost::shared_ptr<MockIFimSocket> fim_sockets[kNumDSPerGroup - 1];
-  for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
-    fim_sockets[i].reset(new MockIFimSocket);
-  for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i)
+  FIM_PTR<IFim> fims[kNumDSPerGroup - 1];
+  uint64_t req_id = 0;
+  MockIDirIterator* dir_iterator = new MockIDirIterator;
+  EXPECT_CALL(*dir_iterator, GetNext(_, _, _))
+      .WillOnce(DoAll(SetArgPointee<0>("000/0000005.d"),
+                      SetArgPointee<1>(false),
+                      WithArg<2>(SetStatbufCtime(123456789)),
+                      Return(true)))
+      .WillOnce(Return(false));
+  EXPECT_CALL(*store_, FreeData(0x5, true));
+
+  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id);
+
+  FSTime mtime = {1234567890ULL, 987654321};
+  for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i) {
+    if (i == 1) {  // The only Fims actually received
+      EXPECT_CALL(*fim_sockets[i], WriteMsg(_));
+
+      FIM_PTR<DSResyncInfoFim> ifim = DSResyncInfoFim::MakePtr();
+      (*ifim)->inode = 5;
+      (*ifim)->mtime = mtime;
+      (*ifim)->size = 42;
+      resync_fim_processor_->Process(ifim, fim_sockets[i]);
+      FIM_PTR<DSResyncFim> rfim = DSResyncFim::MakePtr(5);
+      rfim->set_req_id(++req_id);
+      (*rfim)->inode = 42;
+      (*rfim)->cg_off = kSegmentSize;
+      std::memcpy(rfim->tail_buf(), "hello", 5);
+      resync_fim_processor_->Process(rfim, fim_sockets[i]);
+    }
+
+    FIM_PTR<IFim> efim = DSResyncPhaseFim::MakePtr();
+    efim->set_req_id(++req_id);
+    resync_fim_processor_->Process(efim, fim_sockets[i]);
+  }
+
+  // MS not ready
+  resync_fim_processor_->Process(DSResyncReadyFim::MakePtr(), fim_sockets[0]);
+  // Ignore non-matching MS fim
+  FIM_PTR<DSResyncPhaseInodeListReadyFim> ms_fim =
+      DSResyncPhaseInodeListReadyFim::MakePtr();
+  resync_fim_processor_->Process(ms_fim, ms_fim_socket_);
+  // Ignore non-matching MS fim
+  ms_fim = DSResyncPhaseInodeListReadyFim::MakePtr(sizeof(InodeNum));
+  *(reinterpret_cast<InodeNum*>(ms_fim->tail_buf())) = 4;
+  resync_fim_processor_->Process(ms_fim, ms_fim_socket_);
+  // MS ready seen
+  *(reinterpret_cast<InodeNum*>(ms_fim->tail_buf())) = 5;
+  resync_fim_processor_->Process(ms_fim, ms_fim_socket_);
+  // Some DS not ready
+  for (unsigned i = 1; i < kNumDSPerGroup - 2; ++i)
     resync_fim_processor_->Process(DSResyncReadyFim::MakePtr(), fim_sockets[i]);
 
   // The last DSResyncReadyFim causes all the above to be replied
-  FIM_PTR<IFim> fims[kNumDSPerGroup - 1];
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
     EXPECT_CALL(*fim_sockets[i], WriteMsg(_))
         .WillOnce(SaveArg<0>(fims + i));

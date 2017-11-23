@@ -447,6 +447,7 @@ class ResyncFimProcessor
     AddHandler(&ResyncFimProcessor::HandleDSResyncRemoval);
     AddHandler(&ResyncFimProcessor::HandleDSResyncList);
     AddHandler(&ResyncFimProcessor::HandleDSResyncPhase);
+    AddHandler(&ResyncFimProcessor::HandleDSResyncPhaseInodeListReady);
     AddHandler(&ResyncFimProcessor::HandleDSResyncReady);
     AddHandler(&ResyncFimProcessor::HandleDSResyncInfo);
     AddHandler(&ResyncFimProcessor::HandleDSResync);
@@ -496,6 +497,8 @@ class ResyncFimProcessor
   boost::unordered_set<InodeNum> updated_inodes_;
   /** Computed resync list */
   std::vector<InodeNum> resync_list_;
+  std::vector<InodeNum> phase_resync_list_;
+  bool ms_ready_;
   PendingFimsMap pending_fims_map_; /**< Per-DS unanswered Fims */
   uint64_t num_handled_; /**< Number of segments handled. */
   InodeNum last_inode_; /**< Last inode written */
@@ -512,6 +515,7 @@ class ResyncFimProcessor
     completion_handler_ = ResyncCompleteHandler();
     updated_inodes_.clear();
     resync_list_.clear();
+    ms_ready_ = false;
     pending_fims_map_.clear();
     curr_writer_.reset();
     num_handled_ = 0;
@@ -678,10 +682,10 @@ class ResyncFimProcessor
   }
 
   template<typename TFim> FIM_PTR<TFim>
-  MakePhaseInodeListFim(const std::vector<InodeNum>& phase_resync_list) {
-    std::size_t size = phase_resync_list.size() * sizeof(InodeNum);
+  MakePhaseInodeListFim() {
+    std::size_t size = phase_resync_list_.size() * sizeof(InodeNum);
     FIM_PTR<TFim> fim = TFim::MakePtr(size);
-    std::memcpy(fim->tail_buf(), phase_resync_list.data(), size);
+    std::memcpy(fim->tail_buf(), phase_resync_list_.data(), size);
     return fim;
   }
 
@@ -692,14 +696,14 @@ class ResyncFimProcessor
   void ReplyResyncPhase() {
     size_t max_cnt = server_->configs().data_sync_num_inodes() - 1;  // 0 -> inf
     max_cnt = std::min<size_t>(max_cnt, kMaxListSize - 1) + 1;
-    std::vector<InodeNum> phase_resync_list;
-    while (!resync_list_.empty() && phase_resync_list.size() < max_cnt) {
+    phase_resync_list_.clear();
+    while (!resync_list_.empty() && phase_resync_list_.size() < max_cnt) {
       InodeNum inode = resync_list_.back();
-      phase_resync_list.push_back(inode);
+      phase_resync_list_.push_back(inode);
       resync_list_.pop_back();
     }
     LOG(informational, Degraded, "Sending resync inode list, size ",
-        PVal(phase_resync_list.size()));
+        PVal(phase_resync_list_.size()));
     for (PendingFimsMap::iterator it = pending_fims_map_.begin();
          it != pending_fims_map_.end();
          ++it) {
@@ -707,22 +711,21 @@ class ResyncFimProcessor
       const boost::shared_ptr<IFimSocket>& peer = it->first;
       ReplyOnExit r(fim, peer);
       FIM_PTR<DSResyncPhaseReplyFim> reply =
-          MakePhaseInodeListFim<DSResyncPhaseReplyFim>(phase_resync_list);
+          MakePhaseInodeListFim<DSResyncPhaseReplyFim>();
       r.SetNormalReply(reply);
       it->second.phase = 0;
     }
     boost::shared_ptr<IFimSocket> ms_socket =
         server_->tracker_mapper()->GetMSFimSocket();
     if (ms_socket)
-      ms_socket->WriteMsg(
-          MakePhaseInodeListFim<DSResyncPhaseInodeListFim>(phase_resync_list));
+      ms_socket->WriteMsg(MakePhaseInodeListFim<DSResyncPhaseInodeListFim>());
     {
       boost::unique_lock<boost::shared_mutex> lock;
       server_->WriteLockDSGState(&lock);
-      server_->set_dsg_inodes_resyncing(phase_resync_list);
+      server_->set_dsg_inodes_resyncing(phase_resync_list_);
       server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
     }
-    if (phase_resync_list.empty())
+    if (phase_resync_list_.empty())
       Finalize();
   }
 
@@ -734,13 +737,34 @@ class ResyncFimProcessor
     }
     PendingFims& pending_fims = pending_fims_map_[peer];
     pending_fims.ready = fim;
-    if (!CheckNumDSPending())
+    NotifyIfPhaseReady();
+    return true;
+  }
+
+  bool HandleDSResyncPhaseInodeListReady(
+      const FIM_PTR<DSResyncPhaseInodeListReadyFim>& fim,
+      const boost::shared_ptr<IFimSocket>& peer) {
+    size_t len = fim->tail_buf_size();
+    if (!enabled_)
       return true;
+    if (len == 0 ||
+        fim->tail_buf_size() != phase_resync_list_.size() * sizeof(InodeNum))
+      return true;
+    if (std::memcmp(phase_resync_list_.data(), fim->tail_buf(), len) != 0)
+      return true;
+    ms_ready_ = true;
+    NotifyIfPhaseReady();
+    return true;
+  }
+
+  void NotifyIfPhaseReady() {
+    if (!CheckNumDSPending() || !ms_ready_)
+      return;
     for (PendingFimsMap::const_iterator it = pending_fims_map_.cbegin();
          it != pending_fims_map_.cend();
          ++it)
       if (!it->second.ready)
-        return true;
+        return;
     for (PendingFimsMap::iterator it = pending_fims_map_.begin();
          it != pending_fims_map_.end();
          ++it) {
@@ -750,7 +774,7 @@ class ResyncFimProcessor
       r.SetNormalReply(DSResyncReadyReplyFim::MakePtr());
       it->second.ready = 0;
     }
-    return true;
+    ms_ready_ = false;
   }
 
   bool HandleDSResyncInfo(const FIM_PTR<DSResyncInfoFim>& fim,
