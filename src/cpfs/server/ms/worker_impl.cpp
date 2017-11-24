@@ -52,6 +52,7 @@
 #include "server/ms/base_ms.hpp"
 #include "server/ms/dirty_inode.hpp"
 #include "server/ms/ds_locker.hpp"
+#include "server/ms/dsg_op_state.hpp"
 #include "server/ms/failover_mgr.hpp"
 #include "server/ms/inode_mutex.hpp"
 #include "server/ms/inode_src.hpp"
@@ -1184,7 +1185,8 @@ void Worker::DSTruncate(const FSTime& optime, InodeNum inode,
   FileCoordManager coord_mgr(inode, group_ids.data(), group_ids.size());
   std::vector<Segment> segments;
   coord_mgr.GetAllGroupEnd(size, &segments);
-  ms()->ds_completion_checker_set()->Get(inode)->RegisterOp(&coord_mgr);
+  ms()->dsg_op_state_mgr()->completion_checker_set()
+      ->Get(inode)->RegisterOp(&coord_mgr);
   std::vector<boost::shared_ptr<IReqEntry> > req_entries;
   for (unsigned i = 0; i < segments.size(); ++i) {
     GroupId group = segments[i].dsg;
@@ -1217,7 +1219,8 @@ void Worker::DSTruncate(const FSTime& optime, InodeNum inode,
     try {
       (*it)->WaitReply();  // Original
     } catch (std::runtime_error) {}  // ignore
-  ms()->ds_completion_checker_set()->CompleteOp(inode, &coord_mgr);
+  ms()->dsg_op_state_mgr()->completion_checker_set()
+      ->CompleteOp(inode, &coord_mgr);
 }
 
 void Worker::DSMtime(const FSTime& optime, InodeNum inode,

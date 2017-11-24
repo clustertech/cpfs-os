@@ -44,6 +44,7 @@
 #include "server/inode_removal_tracker.hpp"
 #include "server/ms/base_ms.hpp"
 #include "server/ms/conn_mgr.hpp"
+#include "server/ms/dsg_op_state.hpp"
 #include "server/ms/resync_mgr.hpp"
 #include "server/ms/startup_mgr.hpp"
 #include "server/ms/stat_keeper.hpp"
@@ -640,9 +641,9 @@ class DSCtrlFimProcessor : public MemberFimProcessor<DSCtrlFimProcessor> {
       InodeNum* inodes = reinterpret_cast<InodeNum*>(fim->tail_buf());
       std::vector<InodeNum> resyncing;
       std::copy(inodes, inodes + size, std::back_inserter(resyncing));
-      server_->set_dsg_inodes_resyncing(group, resyncing);
+      server_->dsg_op_state_mgr()->set_dsg_inodes_resyncing(group, resyncing);
       IOpCompletionCheckerSet* checker_set =
-          server_->ds_completion_checker_set();
+          server_->dsg_op_state_mgr()->completion_checker_set();
       checker_set->OnCompleteAllSubset(
           resyncing,
           boost::bind(&DSCtrlFimProcessor::SendPhaseInodeListReply,

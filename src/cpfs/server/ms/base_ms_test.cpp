@@ -3,10 +3,8 @@
 
 #include <csignal>
 #include <string>
-#include <vector>
 
 #include <boost/scoped_ptr.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <boost/unordered_map.hpp>
 
 #include <gmock/gmock.h>
@@ -102,8 +100,8 @@ TEST(BaseMSTest, GetSet) {
   EXPECT_EQ(0, ms.failover_mgr());
   ms.set_resync_mgr(0);
   EXPECT_EQ(0, ms.resync_mgr());
-  ms.set_ds_completion_checker_set(0);
-  EXPECT_EQ(0, ms.ds_completion_checker_set());
+  ms.set_dsg_op_state_mgr(0);
+  EXPECT_EQ(0, ms.dsg_op_state_mgr());
   ms.set_meta_dir_reader(0);
   EXPECT_EQ(0, ms.meta_dir_reader());
   ms.set_peer_time_keeper(0);
@@ -122,16 +120,6 @@ TEST(BaseMSTest, GetSet) {
   EXPECT_EQ(0, ms.admin_fim_processor());
   ms.StartServerActivated();
   ms.PrepareActivate();
-  std::vector<InodeNum> resyncing;
-  resyncing.push_back(2);
-  resyncing.push_back(3);
-  ms.set_dsg_inodes_resyncing(1, resyncing);
-  {
-    boost::shared_lock<boost::shared_mutex> lock;
-    ms.ReadLockDSGOpState(1, &lock);
-    EXPECT_TRUE(ms.is_dsg_inode_resyncing(1, 2));
-    EXPECT_FALSE(ms.is_dsg_inode_resyncing(1, 4));
-  }
 }
 
 class MSTest : public ::testing::Test {

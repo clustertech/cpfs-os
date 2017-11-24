@@ -11,43 +11,26 @@
  * adds the initialization and run code.
  */
 
-#include <vector>
-
 #include <boost/scoped_ptr.hpp>
-#include <boost/thread/shared_mutex.hpp>
-#include <boost/unordered_map.hpp>
-#include <boost/unordered_set.hpp>
 
 #include "common.hpp"
-#include "mutex_util.hpp"
 #include "server/base_server.hpp"
 
 namespace cpfs {
 
 class ConfigMgr;
 class IFimProcessor;
-class IOpCompletionCheckerSet;
 class IThreadFimProcessor;
 class ITimeKeeper;
 
 namespace server {
 namespace ms {
 
-/**
- * Represent the operational state of a DS group.
- *
- * At present it only keeps which inodes are currently resyncing and
- * thus cannot be truncated yet.
- */
-struct DSGOpsState {
-  boost::shared_mutex data_mutex; /**< reader-writer lock for fields below */
-  boost::unordered_set<InodeNum> resyncing; /**< inodes is being resynced */
-};
-
 class IAttrUpdater;
 class ICleaner;
 class IConnMgr;
 class IDSGAllocator;
+class IDSGOpStateMgr;
 class IDSLocker;
 class IDSQueryMgr;
 class IDirtyInodeMgr;
@@ -246,13 +229,13 @@ class BaseMetaServer : public BaseCpfsServer {
   IResyncMgr* resync_mgr();
 
   /**
-   * @param checker_set The completion checker set for DS operations
+   * @param mgr The DSG op state manager to use
    */
-  void set_ds_completion_checker_set(IOpCompletionCheckerSet* checker_set);
+  void set_dsg_op_state_mgr(IDSGOpStateMgr* mgr);
   /**
-   * @return Completion checker set for DS operations
+   * @return The DSG op state manager used
    */
-  IOpCompletionCheckerSet* ds_completion_checker_set();
+  IDSGOpStateMgr* dsg_op_state_mgr();
 
   /**
    * @param meta_dir_reader The meta directory reader to use
@@ -331,40 +314,6 @@ class BaseMetaServer : public BaseCpfsServer {
    */
   ClientNum& client_num_counter();
 
-  /**
-   * Prepare for reading of DSG operations state.
-   *
-   * @param group The group to read the operation state
-   *
-   * @param lock The lock to keep others from writing to the DSG ops state
-   */
-  void ReadLockDSGOpState(GroupId group,
-                          boost::shared_lock<boost::shared_mutex>* lock);
-
-  /**
-   * Set the inodes to be resyncing.
-   *
-   * @param group The group to set the pending inodes
-   *
-   * @param inodes The inodes resyncing, cleared after the call
-   */
-  void set_dsg_inodes_resyncing(GroupId group,
-                                const std::vector<InodeNum>& inodes);
-
-  /**
-   * Return whether an inode is to be resync'ed
-   *
-   * This function should be called with the LockDSOpState read lock
-   * held (see ReadLockDSOpState()).
-   *
-   * @param group The group to check for inode resync
-   *
-   * @param inode The inode to check
-   *
-   * @return Whether the inode is to be resync'ed
-   */
-  bool is_dsg_inode_resyncing(GroupId group, InodeNum inode);
-
  protected:
   /** Manipulate data directory of meta server */
   boost::scoped_ptr<IStore> store_;
@@ -398,8 +347,8 @@ class BaseMetaServer : public BaseCpfsServer {
   boost::scoped_ptr<IFailoverMgr> failover_mgr_;
   /** Resync manager */
   boost::scoped_ptr<IResyncMgr> resync_mgr_;
-  /** Completion checker for DS operations */
-  boost::scoped_ptr<IOpCompletionCheckerSet> ds_completion_checker_set_;
+  /** DSG operation state manager */
+  boost::scoped_ptr<IDSGOpStateMgr> dsg_op_state_mgr_;
   /** Meta directory reader */
   boost::scoped_ptr<IMetaDirReader> meta_dir_reader_;
   /** Time keeper for peer MS last seen */
@@ -417,9 +366,6 @@ class BaseMetaServer : public BaseCpfsServer {
   /** The Admin FIM processor */
   boost::scoped_ptr<IFimProcessor> admin_fim_processor_;
   ClientNum client_num_counter_; /**< Number of clients connected so far */
-  mutable MUTEX_TYPE data_mutex_; /**< Protect fields below */
-  boost::unordered_map<GroupId, DSGOpsState>
-  ops_states_; /**< DSG operation states */
 };
 
 /**

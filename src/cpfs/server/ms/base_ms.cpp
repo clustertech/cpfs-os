@@ -8,15 +8,11 @@
 
 #include "server/ms/base_ms.hpp"
 
-#include <algorithm>
 #include <csignal>
-#include <iterator>
 #include <string>
-#include <vector>
 
 #include <boost/foreach.hpp>
 #include <boost/shared_ptr.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <boost/unordered_map.hpp>
 
 #include "authenticator.hpp"
@@ -28,8 +24,6 @@
 #include "fims.hpp"
 #include "io_service_runner.hpp"
 #include "logger.hpp"
-#include "mutex_util.hpp"
-#include "op_completion.hpp"
 #include "shutdown_mgr.hpp"
 #include "thread_fim_processor.hpp"
 #include "time_keeper.hpp"
@@ -41,6 +35,7 @@
 #include "server/ms/ds_locker.hpp"
 #include "server/ms/ds_query_mgr.hpp"
 #include "server/ms/dsg_alloc.hpp"
+#include "server/ms/dsg_op_state.hpp"
 #include "server/ms/failover_mgr.hpp"
 #include "server/ms/inode_src.hpp"
 #include "server/ms/inode_usage.hpp"
@@ -296,13 +291,14 @@ IResyncMgr* BaseMetaServer::resync_mgr() {
   return resync_mgr_.get();
 }
 
-void BaseMetaServer::set_ds_completion_checker_set(
-    IOpCompletionCheckerSet* checker_set) {
-  ds_completion_checker_set_.reset(checker_set);
+void BaseMetaServer::set_dsg_op_state_mgr(IDSGOpStateMgr* mgr) {
+  dsg_op_state_mgr_.reset(mgr);
 }
-
-IOpCompletionCheckerSet* BaseMetaServer::ds_completion_checker_set() {
-  return ds_completion_checker_set_.get();
+/**
+ * @return The DSG op state manager used
+ */
+IDSGOpStateMgr* BaseMetaServer::dsg_op_state_mgr() {
+  return dsg_op_state_mgr_.get();
 }
 
 void BaseMetaServer::set_meta_dir_reader(IMetaDirReader* meta_dir_reader) {
@@ -371,30 +367,6 @@ IFimProcessor* BaseMetaServer::admin_fim_processor() {
 
 ClientNum& BaseMetaServer::client_num_counter() {
   return client_num_counter_;
-}
-
-void BaseMetaServer::ReadLockDSGOpState(
-    GroupId group, boost::shared_lock<boost::shared_mutex>* lock) {
-  MUTEX_LOCK_GUARD(data_mutex_);
-  DSGOpsState& ops_state = ops_states_[group];
-  MUTEX_LOCK(boost::shared_lock, ops_state.data_mutex, my_lock);
-  lock->swap(my_lock);
-}
-
-void BaseMetaServer::set_dsg_inodes_resyncing(
-    GroupId group, const std::vector<InodeNum>& inodes) {
-  MUTEX_LOCK_GUARD(data_mutex_);
-  DSGOpsState& ops_state = ops_states_[group];
-  MUTEX_LOCK(boost::unique_lock, ops_state.data_mutex, my_lock);
-  ops_state.resyncing.clear();
-  std::copy(inodes.begin(), inodes.end(),
-            std::inserter(ops_state.resyncing, ops_state.resyncing.begin()));
-}
-
-bool BaseMetaServer::is_dsg_inode_resyncing(GroupId group, InodeNum inode) {
-  MUTEX_LOCK_GUARD(data_mutex_);
-  DSGOpsState& ops_state = ops_states_[group];
-  return ops_state.resyncing.find(inode) != ops_state.resyncing.end();
 }
 
 BaseMetaServer* MakeMetaServer(const ConfigMgr& configs) {

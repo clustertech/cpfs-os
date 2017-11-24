@@ -45,6 +45,7 @@
 #include "server/ms/base_ms_mock.hpp"
 #include "server/ms/dirty_inode_mock.hpp"
 #include "server/ms/ds_locker_mock.hpp"
+#include "server/ms/dsg_op_state_mock.hpp"
 #include "server/ms/failover_mgr_mock.hpp"
 #include "server/ms/inode_mutex.hpp"  // IWYU pragma: keep
 #include "server/ms/inode_src_mock.hpp"
@@ -90,6 +91,7 @@ class MSWorkerTest : public ::testing::Test {
   MockITrackerMapper* tracker_mapper_;
   MockICCacheTracker* cache_tracker_;
   MockIDSLocker* ds_locker_;
+  MockIDSGOpStateMgr* dsg_op_state_mgr_;
   MockIReplier* replier_;
   MockIReplySet* recent_reply_set_;
   MockIInodeSrc* inode_src_;
@@ -99,12 +101,12 @@ class MSWorkerTest : public ::testing::Test {
   MockITopologyMgr* topology_mgr_;
   MockIFailoverMgr* failover_mgr_;
   MockIStartupMgr* startup_mgr_;
-  MockIOpCompletionCheckerSet* ds_completion_checker_set_;
 
   boost::shared_ptr<MockIFimSocket> fim_socket_;
   boost::shared_ptr<MockIReqTracker> tracker_;
   boost::shared_ptr<MockIFimSocket> ms_fim_socket_;
   boost::shared_ptr<MockIReqTracker> ms_tracker_;
+  boost::scoped_ptr<MockIOpCompletionCheckerSet> completion_checker_set_;
   boost::shared_ptr<MockIOpCompletionChecker> completion_checker_;
   const FIM_PTR<IFim> empty_ifim_;
 
@@ -117,6 +119,7 @@ class MSWorkerTest : public ::testing::Test {
         tracker_(new MockIReqTracker),
         ms_fim_socket_(new MockIFimSocket),
         ms_tracker_(new MockIReqTracker),
+        completion_checker_set_(new MockIOpCompletionCheckerSet),
         completion_checker_(new MockIOpCompletionChecker),
         worker_(MakeWorker()) {
     worker_->SetQueuer(&queuer_);
@@ -134,8 +137,7 @@ class MSWorkerTest : public ::testing::Test {
     server_.set_topology_mgr(topology_mgr_ = new MockITopologyMgr);
     server_.set_failover_mgr(failover_mgr_ = new MockIFailoverMgr);
     server_.set_startup_mgr(startup_mgr_ = new MockIStartupMgr);
-    server_.set_ds_completion_checker_set(
-        ds_completion_checker_set_ = new MockIOpCompletionCheckerSet);
+    server_.set_dsg_op_state_mgr(dsg_op_state_mgr_ = new MockIDSGOpStateMgr);
     server_.set_tracer(MakeSmallTracer());
     EXPECT_CALL(*fim_socket_, GetReqTracker())
         .WillRepeatedly(Return(tracker_.get()));
@@ -153,7 +155,9 @@ class MSWorkerTest : public ::testing::Test {
         .WillRepeatedly(Return(kDSGReady));
     EXPECT_CALL(*topology_mgr_, GetDSGState(3, _))
         .WillRepeatedly(Return(kDSGReady));
-    EXPECT_CALL(*ds_completion_checker_set_, Get(_))
+    EXPECT_CALL(*dsg_op_state_mgr_, completion_checker_set())
+        .WillRepeatedly(Return(completion_checker_set_.get()));
+    EXPECT_CALL(*completion_checker_set_, Get(_))
         .WillRepeatedly(Return(completion_checker_));
     worker_->set_server(&server_);
     worker_->SetCacheInvalFunc(
@@ -161,7 +165,7 @@ class MSWorkerTest : public ::testing::Test {
   }
 
   ~MSWorkerTest() {
-    Mock::VerifyAndClear(ds_completion_checker_set_);
+    Mock::VerifyAndClear(completion_checker_set_.get());
     Mock::VerifyAndClear(fim_socket_.get());
     Mock::VerifyAndClear(tracker_mapper_);
   }
@@ -196,7 +200,7 @@ class MSWorkerTest : public ::testing::Test {
           EXPECT_CALL(*entry[i], WaitReply())
               .WillOnce(Throw(std::runtime_error("Test exception")));
       }
-      EXPECT_CALL(*test_->ds_completion_checker_set_, CompleteOp(_, _));
+      EXPECT_CALL(*test_->completion_checker_set_, CompleteOp(_, _));
     }
 
     ~DSTruncateMocks() {
