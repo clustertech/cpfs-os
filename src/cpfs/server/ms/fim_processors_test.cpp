@@ -27,7 +27,6 @@
 #include "log_testlib.hpp"
 #include "logger.hpp"
 #include "mock_actions.hpp"
-#include "op_completion_mock.hpp"
 #include "req_tracker_mock.hpp"
 #include "shutdown_mgr_mock.hpp"
 #include "thread_fim_processor_mock.hpp"
@@ -83,7 +82,6 @@ class MSFimProcessorsTest : public ::testing::Test {
   boost::shared_ptr<MockIFimSocket> ds_fim_socket_;
   boost::shared_ptr<MockIReqTracker> ms_req_tracker_;
   boost::shared_ptr<MockIFimSocket> ms_fim_socket_;
-  boost::scoped_ptr<MockIOpCompletionCheckerSet> completion_checker_set_;
   MockIStateMgr* state_mgr_;
   MockIStartupMgr* startup_mgr_;
   MockIThreadFimProcessor* failover_proc_;
@@ -121,8 +119,7 @@ class MSFimProcessorsTest : public ::testing::Test {
         ds_req_tracker_(new MockIReqTracker),
         ds_fim_socket_(new MockIFimSocket),
         ms_req_tracker_(new MockIReqTracker),
-        ms_fim_socket_(new MockIFimSocket),
-        completion_checker_set_(new MockIOpCompletionCheckerSet) {
+        ms_fim_socket_(new MockIFimSocket) {
     ms_->set_tracker_mapper(tracker_mapper_ = new MockITrackerMapper);
     ms_->set_store(store_ = new MockIStore);
     ms_->set_ms_fim_processor(ms_fim_proc_ = new MockIFimProcessor);
@@ -138,8 +135,6 @@ class MSFimProcessorsTest : public ::testing::Test {
     ms_->set_failover_mgr(failover_mgr_ = new MockIFailoverMgr);
     ms_->set_resync_mgr(resync_mgr_ = new MockIResyncMgr);
     ms_->set_dsg_op_state_mgr(dsg_op_state_mgr_ = new MockIDSGOpStateMgr);
-    EXPECT_CALL(*dsg_op_state_mgr_, completion_checker_set())
-        .WillRepeatedly(Return(completion_checker_set_.get()));
     ms_->set_peer_time_keeper(peer_time_keeper_ = new MockITimeKeeper);
     ms_->set_ha_counter(ha_counter_ = new MockIHACounter);
     ms_->set_inode_removal_tracker(
@@ -901,10 +896,10 @@ TEST_F(MSFimProcessorsTest, MSDSDSResyncPhaseInodeList) {
   EXPECT_CALL(*topology_mgr_, GetDSGState(0, _))
       .WillOnce(DoAll(SetArgPointee<1>(0),
                       Return(kDSGResync)));
-  EXPECT_CALL(*dsg_op_state_mgr_, set_dsg_inodes_resyncing(
+  EXPECT_CALL(*dsg_op_state_mgr_, SetDsgInodesResyncing(
       0, ElementsAre(42, 43)));
   boost::function<void()> callback;
-  EXPECT_CALL(*completion_checker_set_, OnCompleteAllSubset(_, _))
+  EXPECT_CALL(*dsg_op_state_mgr_, OnInodesCompleteOp(_, _))
       .WillOnce(SaveArg<1>(&callback));
 
   EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket));

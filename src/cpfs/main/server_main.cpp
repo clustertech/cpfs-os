@@ -79,7 +79,6 @@
 #include "server/ms/ds_locker_impl.hpp"
 #include "server/ms/ds_query_mgr_impl.hpp"
 #include "server/ms/dsg_alloc_impl.hpp"
-#include "server/ms/dsg_op_state.hpp"
 #include "server/ms/dsg_op_state_impl.hpp"
 #include "server/ms/failover_mgr.hpp"
 #include "server/ms/failover_mgr_impl.hpp"
@@ -362,9 +361,8 @@ IService* BuildMetaServer(const ConfigMgr& configs) {
   ret->set_inode_removal_tracker(removal_tracker);
   store->SetInodeRemovalTracker(removal_tracker);
   ret->set_resync_mgr(ms::MakeResyncMgr(ret.get()));
-  ret->set_dsg_op_state_mgr(ms::MakeDSGOpStateMgr());
-  ret->dsg_op_state_mgr()->set_completion_checker_set(
-      MakeOpCompletionCheckerSet());
+  ret->set_dsg_op_state_mgr(
+      ms::MakeDSGOpStateMgr(MakeOpCompletionCheckerSet()));
   if (!configs.ms2_host().empty()) {
     ITimeKeeper* time_keeper =
         MakeTimeKeeper(data_dir,

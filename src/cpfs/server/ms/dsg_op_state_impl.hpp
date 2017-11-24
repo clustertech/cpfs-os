@@ -9,6 +9,9 @@
  */
 
 namespace cpfs {
+
+class IOpCompletionCheckerSet;
+
 namespace server {
 namespace ms {
 
@@ -16,8 +19,10 @@ class IDSGOpStateMgr;
 
 /**
  * Create an DSG operation states manager.
+ *
+ * @param checker_set The checker set to use
  */
-IDSGOpStateMgr* MakeDSGOpStateMgr();
+IDSGOpStateMgr* MakeDSGOpStateMgr(IOpCompletionCheckerSet* checker_set);
 
 }  // namespace ms
 }  // namespace server

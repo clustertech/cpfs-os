@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <boost/scoped_ptr.hpp>
+#include <boost/shared_ptr.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <boost/unordered_map.hpp>
 #include <boost/unordered_set.hpp>
@@ -44,23 +45,33 @@ struct DSGOpsState {
  */
 class DSGOpStateMgr : public IDSGOpStateMgr {
  public:
-  void set_completion_checker_set(IOpCompletionCheckerSet* checker_set) {
-    completion_checker_set_.reset(checker_set);
+  /**
+   * @param checker_set The checker set to use
+   */
+  explicit DSGOpStateMgr(IOpCompletionCheckerSet* checker_set)
+    : completion_checker_set_(checker_set) {}
+
+  void RegisterInodeOp(InodeNum inode, const void* op) {
+    completion_checker_set_->Get(inode)->RegisterOp(op);
   }
 
-  IOpCompletionCheckerSet* completion_checker_set() {
-    return completion_checker_set_.get();
+  void CompleteInodeOp(InodeNum inode, const void* op) {
+    completion_checker_set_->CompleteOp(inode, op);
   }
 
-  void ReadLock(
-      GroupId group, boost::shared_lock<boost::shared_mutex>* lock) {
+  void OnInodesCompleteOp(const std::vector<InodeNum> inodes,
+                          OpCompletionCallback callback) {
+    completion_checker_set_->OnCompleteAllSubset(inodes, callback);
+  }
+
+  void ReadLock(GroupId group, boost::shared_lock<boost::shared_mutex>* lock) {
     MUTEX_LOCK_GUARD(data_mutex_);
     DSGOpsState& ops_state = ops_states_[group];
     MUTEX_LOCK(boost::shared_lock, ops_state.data_mutex, my_lock);
     lock->swap(my_lock);
   }
 
-  void set_dsg_inodes_resyncing(
+  void SetDsgInodesResyncing(
       GroupId group, const std::vector<InodeNum>& inodes) {
     MUTEX_LOCK_GUARD(data_mutex_);
     DSGOpsState& ops_state = ops_states_[group];
@@ -77,17 +88,17 @@ class DSGOpStateMgr : public IDSGOpStateMgr {
   }
 
  private:
-  mutable MUTEX_TYPE data_mutex_; /**< Protect fields below */
   /** Completion checker for DS operations */
   boost::scoped_ptr<IOpCompletionCheckerSet> completion_checker_set_;
+  mutable MUTEX_TYPE data_mutex_; /**< Protect fields below */
   boost::unordered_map<GroupId, DSGOpsState>
   ops_states_; /**< DSG operation states */
 };
 
 }  // namespace
 
-IDSGOpStateMgr* MakeDSGOpStateMgr() {
-  return new DSGOpStateMgr();
+IDSGOpStateMgr* MakeDSGOpStateMgr(IOpCompletionCheckerSet* checker_set) {
+  return new DSGOpStateMgr(checker_set);
 }
 
 }  // namespace ms

@@ -36,7 +36,6 @@
 #include "log_testlib.hpp"
 #include "mock_actions.hpp"
 #include "mutex_util.hpp"
-#include "op_completion_mock.hpp"
 #include "req_entry_mock.hpp"
 #include "req_tracker_mock.hpp"
 #include "tracer_impl.hpp"
@@ -106,8 +105,6 @@ class MSWorkerTest : public ::testing::Test {
   boost::shared_ptr<MockIReqTracker> tracker_;
   boost::shared_ptr<MockIFimSocket> ms_fim_socket_;
   boost::shared_ptr<MockIReqTracker> ms_tracker_;
-  boost::scoped_ptr<MockIOpCompletionCheckerSet> completion_checker_set_;
-  boost::shared_ptr<MockIOpCompletionChecker> completion_checker_;
   const FIM_PTR<IFim> empty_ifim_;
 
   MockFunction<void(InodeNum, bool)> inv_func_;
@@ -119,8 +116,6 @@ class MSWorkerTest : public ::testing::Test {
         tracker_(new MockIReqTracker),
         ms_fim_socket_(new MockIFimSocket),
         ms_tracker_(new MockIReqTracker),
-        completion_checker_set_(new MockIOpCompletionCheckerSet),
-        completion_checker_(new MockIOpCompletionChecker),
         worker_(MakeWorker()) {
     worker_->SetQueuer(&queuer_);
     server_.set_state_mgr(state_mgr_ = new MockIStateMgr);
@@ -155,17 +150,12 @@ class MSWorkerTest : public ::testing::Test {
         .WillRepeatedly(Return(kDSGReady));
     EXPECT_CALL(*topology_mgr_, GetDSGState(3, _))
         .WillRepeatedly(Return(kDSGReady));
-    EXPECT_CALL(*dsg_op_state_mgr_, completion_checker_set())
-        .WillRepeatedly(Return(completion_checker_set_.get()));
-    EXPECT_CALL(*completion_checker_set_, Get(_))
-        .WillRepeatedly(Return(completion_checker_));
     worker_->set_server(&server_);
     worker_->SetCacheInvalFunc(
         boost::bind(GetMockCall(inv_func_), &inv_func_, _1, _2));
   }
 
   ~MSWorkerTest() {
-    Mock::VerifyAndClear(completion_checker_set_.get());
     Mock::VerifyAndClear(fim_socket_.get());
     Mock::VerifyAndClear(tracker_mapper_);
   }
@@ -179,7 +169,7 @@ class MSWorkerTest : public ::testing::Test {
     DSTruncateMocks(MSWorkerTest* test, GroupId group,
                     GroupRole except = kNumDSPerGroup)
         : test_(test) {
-      EXPECT_CALL(*test_->completion_checker_, RegisterOp(_));
+      EXPECT_CALL(*test_->dsg_op_state_mgr_, RegisterInodeOp(_, _));
       for (GroupRole i = 0; i < kNumDSPerGroup; ++i) {
         if (i == except)
           continue;
@@ -200,7 +190,7 @@ class MSWorkerTest : public ::testing::Test {
           EXPECT_CALL(*entry[i], WaitReply())
               .WillOnce(Throw(std::runtime_error("Test exception")));
       }
-      EXPECT_CALL(*test_->completion_checker_set_, CompleteOp(_, _));
+      EXPECT_CALL(*test_->dsg_op_state_mgr_, CompleteInodeOp(_, _));
     }
 
     ~DSTruncateMocks() {

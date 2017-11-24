@@ -12,11 +12,13 @@ namespace server {
 namespace ms {
 
 #define OBJ_METHODS                                                     \
-  ((set_completion_checker_set, void, (IOpCompletionCheckerSet*)))      \
-  ((completion_checker_set, IOpCompletionCheckerSet*,))                 \
+  ((RegisterInodeOp, void, (InodeNum)(const void*)))                    \
+  ((CompleteInodeOp, void, (InodeNum)(const void*)))                    \
+  ((OnInodesCompleteOp, void,                                           \
+    (const std::vector<InodeNum>)(OpCompletionCallback)))               \
   ((ReadLock, void,                                                     \
     (GroupId)(boost::shared_lock<boost::shared_mutex>*)))               \
-  ((set_dsg_inodes_resyncing, void,                                     \
+  ((SetDsgInodesResyncing, void,                                        \
     (GroupId)(const std::vector<InodeNum>&)))                           \
   ((is_dsg_inode_resyncing, bool, (GroupId)(InodeNum)))
 

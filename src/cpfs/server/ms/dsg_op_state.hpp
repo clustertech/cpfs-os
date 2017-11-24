@@ -10,9 +10,11 @@
 
 #include <vector>
 
+#include <boost/function.hpp>
 #include <boost/thread/shared_mutex.hpp>
 
 #include "common.hpp"
+#include "op_completion.hpp"
 
 namespace cpfs {
 
@@ -29,14 +31,38 @@ class IDSGOpStateMgr {
   virtual ~IDSGOpStateMgr() {}
 
   /**
-   * @param checker_set The completion checker set for DS operations
+   * Notify that an inode operation is being started.
+   *
+   * Here "operation" means something that resync needs to wait for.
+   * At present it means truncation.
+   *
+   * @param inode The inode having the operation
+   *
+   * @param op The operation, in the sense of IOpCompletionChecker
    */
-  virtual void set_completion_checker_set(
-      IOpCompletionCheckerSet* checker_set) = 0;
+  virtual void RegisterInodeOp(InodeNum inode, const void* op) = 0;
+
   /**
-   * @return Completion checker set for DS operations
+   * Notify that an inode operation is completed.
+   *
+   * Here "operation" means something that resync needs to wait for.
+   * At present it means truncation.
+   *
+   * @param inode The inode having the operation
+   *
+   * @param op The operation, in the sense of IOpCompletionChecker
    */
-  virtual IOpCompletionCheckerSet* completion_checker_set() = 0;
+  virtual void CompleteInodeOp(InodeNum inode, const void* op) = 0;
+
+  /**
+   * Run a callback when operations of an inode have all completed.
+   *
+   * @param inodes The inodes to wait for
+   *
+   * @param callback The callback to run
+   */
+  virtual void OnInodesCompleteOp(const std::vector<InodeNum> inodes,
+                                  OpCompletionCallback callback) = 0;
 
   /**
    * Prepare for reading of DSG operations state.
@@ -49,13 +75,13 @@ class IDSGOpStateMgr {
       GroupId group, boost::shared_lock<boost::shared_mutex>* lock) = 0;
 
   /**
-   * Set the inodes to be resyncing.
+   * Set the inodes as resyncing.
    *
    * @param group The group to set the pending inodes
    *
    * @param inodes The inodes resyncing, cleared after the call
    */
-  virtual void set_dsg_inodes_resyncing(
+  virtual void SetDsgInodesResyncing(
       GroupId group, const std::vector<InodeNum>& inodes) = 0;
 
   /**

@@ -33,7 +33,6 @@
 #include "fims.hpp"
 #include "logger.hpp"
 #include "member_fim_processor.hpp"
-#include "op_completion.hpp"
 #include "req_tracker.hpp"
 #include "shutdown_mgr.hpp"
 #include "thread_fim_processor.hpp"
@@ -641,10 +640,8 @@ class DSCtrlFimProcessor : public MemberFimProcessor<DSCtrlFimProcessor> {
       InodeNum* inodes = reinterpret_cast<InodeNum*>(fim->tail_buf());
       std::vector<InodeNum> resyncing;
       std::copy(inodes, inodes + size, std::back_inserter(resyncing));
-      server_->dsg_op_state_mgr()->set_dsg_inodes_resyncing(group, resyncing);
-      IOpCompletionCheckerSet* checker_set =
-          server_->dsg_op_state_mgr()->completion_checker_set();
-      checker_set->OnCompleteAllSubset(
+      server_->dsg_op_state_mgr()->SetDsgInodesResyncing(group, resyncing);
+      server_->dsg_op_state_mgr()->OnInodesCompleteOp(
           resyncing,
           boost::bind(&DSCtrlFimProcessor::SendPhaseInodeListReply,
                       this, fim, peer));
