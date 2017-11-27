@@ -277,7 +277,7 @@ bool AttrUpdater::AsyncUpdateAttr(InodeNum inode, FSTime mtime, uint64_t size,
       boost::unique_lock<MUTEX_TYPE> req_lock;
       if (!tracker->AddRequestEntry(entry, &req_lock)) {
         LOG(debug, Store,
-            "When updating attrs for inode ", PVal(inode), ", skipping ",
+            "When updating attrs for inode ", PHex(inode), ", skipping ",
             PVal(tracker->name()), " as it is not connected");
         continue;
       }
@@ -298,7 +298,7 @@ void AttrUpdater::ReqCompleted(
     FIM_PTR<IFim> reply = entry->reply();
     if (!reply || reply->type() != kAttrUpdateReplyFim) {
       LOG(informational, Store, "Missing reply for attr update of ",
-          PVal(inode), " ignoring");
+          PHex(inode), " ignoring");
     } else {
       AttrUpdateReplyFim& rreply = static_cast<AttrUpdateReplyFim&>(*reply);
       if (update_rec->mtime < rreply->mtime)

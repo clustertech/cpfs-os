@@ -83,7 +83,7 @@ class MetaDSLock : public IMetaDSLock {
         MakeTransientReqEntry(tracker_, GetFim(true));
     if (!tracker_->AddRequestEntry(entry)) {
       LOG(informational, Lock,
-          "When acquiring DS lock for inode ", PVal(inode_), ", skipping ",
+          "When acquiring DS lock for inode ", PHex(inode_), ", skipping ",
           PVal(tracker_->name()), " as it is not connected");
       return;
     }
@@ -99,7 +99,7 @@ class MetaDSLock : public IMetaDSLock {
       acquired_ = true;
     } catch (std::runtime_error&) {
       LOG(informational, Lock,
-          "When waiting for DS lock completion, locking of ", PVal(inode_),
+          "When waiting for DS lock completion, locking of ", PHex(inode_),
           " skipped ", PVal(tracker_->name()), " due to disconnection");
     }
     acquiring_ = false;
