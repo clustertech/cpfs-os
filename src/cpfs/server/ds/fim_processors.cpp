@@ -158,6 +158,7 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
       if ((*fim)->state == kDSGReady) {
         server_->inode_removal_tracker()->SetPersistRemoved(false);
         server_->durable_range()->SetConservative(false);
+        server_->degraded_cache()->SetActive(false);
         server_->dsg_ready_time_keeper()->Start();
       } else {
         server_->dsg_ready_time_keeper()->Stop();
@@ -218,7 +219,6 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
   void ResyncRecvComplete(bool success) {
     boost::unique_lock<boost::shared_mutex> lock;
     server_->WriteLockDSGState(&lock);
-    server_->degraded_cache()->SetActive(false);
     if (success) {
       FIM_PTR<DSResyncEndFim> efim = DSResyncEndFim::MakePtr();
       (*efim)->end_type = 1;

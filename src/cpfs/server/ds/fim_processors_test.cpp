@@ -285,7 +285,6 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringSelf) {
 
   // If state not changed on inode completion, reply is sent, resync
   // FimProcessor is initialized
-  EXPECT_CALL(*degraded_cache_, SetActive(false));
   FIM_PTR<IFim> reply;
   EXPECT_CALL(*fim_socket, WriteMsg(_))
      .WillOnce(SaveArg<0>(&reply));
@@ -310,7 +309,6 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringSelf) {
   EXPECT_EQ(kDSResyncEndFim, notify_fim->type());
 
   // If failed, log error
-  EXPECT_CALL(*degraded_cache_, SetActive(false));
   MockLogCallback log_cb;
   LogRoute route(log_cb.GetLogCallback());
   EXPECT_CALL(log_cb, Call(PLEVEL(error, Server),
@@ -348,6 +346,7 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeFromResync) {
 
   EXPECT_CALL(*inode_removal_tracker_, SetPersistRemoved(false));
   EXPECT_CALL(*durable_range_, SetConservative(false));
+  EXPECT_CALL(*degraded_cache_, SetActive(false));
   EXPECT_CALL(*dsg_ready_time_keeper_, Start());
   FIM_PTR<IFim> fim1, fim2;
   EXPECT_CALL(*thread_group_, EnqueueAll(_))
