@@ -207,12 +207,9 @@ class MSWorkerTest : public ::testing::Test {
     boost::shared_ptr<MockIReqTracker> tracker[kNumDSPerGroup];
     boost::shared_ptr<IReqEntry> entry[kNumDSPerGroup];
 
-    explicit DSFreeInodeMocks(MSWorkerTest* test, GroupId group,
-                              GroupRole except = kNumDSPerGroup)
+    explicit DSFreeInodeMocks(MSWorkerTest* test, GroupId group)
         : test_(test) {
       for (GroupRole r = 0; r < kNumDSPerGroup; ++r) {
-        if (r == except)
-          continue;
         tracker[r].reset(new MockIReqTracker);
         EXPECT_CALL(*test->tracker_mapper_, GetDSTracker(group, r))
             .WillOnce(Return(tracker[r]));
@@ -1195,7 +1192,7 @@ TEST_F(MSWorkerTest, ReleaseDegraded) {
       .WillRepeatedly(DoAll(SetArgPointee<1>(0),
                             Return(kDSGDegraded)));
 
-  DSFreeInodeMocks free_mocks(this, 2, 0);
+  DSFreeInodeMocks free_mocks(this, 2);
   active_complete_cb();
 }
 

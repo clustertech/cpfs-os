@@ -1302,11 +1302,7 @@ void Worker::DSFreeInode(
   for (std::vector<GroupId>::const_iterator it = group_ids->begin();
        it != group_ids->end();
        ++it) {
-    GroupRole failed;
-    DSGroupState state = ms()->topology_mgr()->GetDSGState(*it, &failed);
     for (GroupRole r = 0; r < kNumDSPerGroup; ++r) {
-      if (state != kDSGReady && failed == r)
-        continue;
       FIM_PTR<FreeDataFim> req = FreeDataFim::MakePtr();
       (*req)->inode = inode;
       boost::shared_ptr<IReqTracker> tracker =
