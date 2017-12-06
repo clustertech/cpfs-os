@@ -27,6 +27,7 @@
 #include "log_testlib.hpp"
 #include "logger.hpp"
 #include "mock_actions.hpp"
+#include "req_entry.hpp"
 #include "req_tracker_mock.hpp"
 #include "shutdown_mgr_mock.hpp"
 #include "thread_fim_processor_mock.hpp"
@@ -156,6 +157,12 @@ class MSFimProcessorsTest : public ::testing::Test {
         .WillRepeatedly(Return(ms_req_tracker_.get()));
     EXPECT_CALL(*ms_req_tracker_, name())
         .WillRepeatedly(Return("MS"));
+    EXPECT_CALL(*tracker_mapper_, GetMSTracker())
+        .WillRepeatedly(Return(ms_req_tracker_));
+  }
+
+  ~MSFimProcessorsTest() {
+    Mock::VerifyAndClear(tracker_mapper_);
   }
 };
 
@@ -898,6 +905,8 @@ TEST_F(MSFimProcessorsTest, MSDSDSResyncPhaseInodeList) {
                       Return(kDSGResync)));
   EXPECT_CALL(*dsg_op_state_mgr_, SetDsgInodesResyncing(
       0, ElementsAre(42, 43)));
+  EXPECT_CALL(*state_mgr_, GetState())
+      .WillRepeatedly(Return(kStateStandalone));
   boost::function<void()> callback;
   EXPECT_CALL(*dsg_op_state_mgr_, OnInodesCompleteOp(_, _))
       .WillOnce(SaveArg<1>(&callback));
@@ -910,10 +919,54 @@ TEST_F(MSFimProcessorsTest, MSDSDSResyncPhaseInodeList) {
       .WillOnce(SaveArg<0>(&reply));
 
   callback();
-  EXPECT_EQ(kDSResyncPhaseInodeListReadyFim, reply->type());
-  EXPECT_EQ(fim->tail_buf_size(), reply->tail_buf_size());
-  EXPECT_EQ(0, std::memcmp(fim->tail_buf(), reply->tail_buf(),
-                           fim->tail_buf_size()));
+  EXPECT_EQ(kResultCodeReplyFim, reply->type());
+}
+
+TEST_F(MSFimProcessorsTest, MSDSDSResyncPhaseInodeListHA) {
+  boost::shared_ptr<MockIFimSocket> ds_fim_socket(new MockIFimSocket);
+  boost::shared_ptr<IFimSocket> ifs = ds_fim_socket;
+
+  FIM_PTR<DSResyncPhaseInodeListFim> fim =
+      DSResyncPhaseInodeListFim::MakePtr(2 * sizeof(InodeNum));
+  InodeNum* inodes = reinterpret_cast<InodeNum*>(fim->tail_buf());
+  inodes[0] = 42;
+  inodes[1] = 43;
+
+  // In HA mode, will make a replication and wait for reply
+  EXPECT_CALL(*tracker_mapper_, FindDSRole(ifs, _, _))
+      .WillRepeatedly(DoAll(SetArgPointee<1>(0),
+                            SetArgPointee<2>(2),
+                            Return(true)));
+  EXPECT_CALL(*topology_mgr_, GetDSGState(0, _))
+      .WillOnce(DoAll(SetArgPointee<1>(0),
+                      Return(kDSGResync)));
+  EXPECT_CALL(*dsg_op_state_mgr_, SetDsgInodesResyncing(
+      0, ElementsAre(42, 43)));
+  EXPECT_CALL(*state_mgr_, GetState())
+      .WillRepeatedly(Return(kStateActive));
+  boost::shared_ptr<IReqEntry> repl_entry;
+  EXPECT_CALL(*ms_req_tracker_, AddRequestEntry(_, _))
+      .WillOnce(DoAll(SaveArg<0>(&repl_entry),
+                      Return(true)));
+
+  EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket));
+
+  // Upon reply, follow non-HA path
+  boost::function<void()> callback;
+  EXPECT_CALL(*dsg_op_state_mgr_, OnInodesCompleteOp(_, _))
+      .WillOnce(SaveArg<1>(&callback));
+
+  FIM_PTR<ResultCodeReplyFim> cs_reply = ResultCodeReplyFim::MakePtr();
+  (*cs_reply)->err_no = 0;
+  repl_entry->SetReply(cs_reply, 42);
+
+  // Upon callback, a SendPhaseInodeListReply is queued
+  FIM_PTR<IFim> reply;
+  EXPECT_CALL(*ds_fim_socket, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&reply));
+
+  callback();
+  EXPECT_EQ(kResultCodeReplyFim, reply->type());
 }
 
 TEST_F(MSFimProcessorsTest, MSResyncReqCombined) {
@@ -1075,6 +1128,24 @@ TEST_F(MSFimProcessorsTest, ConfigChange) {
       .WillOnce(Return(kStateActive));
   EXPECT_CALL(*topology_mgr_, set_num_groups(3));
   ms_ctrl_fim_proc_->Process(fim3, ms_fim_socket_);
+}
+
+TEST_F(MSFimProcessorsTest, DSResyncPhaseInodeList) {
+  FIM_PTR<DSResyncPhaseInodeListFim> fim =
+      DSResyncPhaseInodeListFim::MakePtr(2 * sizeof(InodeNum));
+  (*fim)->ds_group = 1;
+  InodeNum* inodes = reinterpret_cast<InodeNum*>(fim->tail_buf());
+  inodes[0] = 42;
+  inodes[1] = 43;
+
+  EXPECT_CALL(*dsg_op_state_mgr_, SetDsgInodesResyncing(
+      1, ElementsAre(42, 43)));
+  FIM_PTR<IFim> reply;
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&reply));
+
+  EXPECT_TRUE(ms_ctrl_fim_proc_->Process(fim, ms_fim_socket_));
+  EXPECT_EQ(kResultCodeReplyFim, reply->type());
 }
 
 }  // namespace

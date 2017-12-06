@@ -447,7 +447,6 @@ class ResyncFimProcessor
     AddHandler(&ResyncFimProcessor::HandleDSResyncRemoval);
     AddHandler(&ResyncFimProcessor::HandleDSResyncList);
     AddHandler(&ResyncFimProcessor::HandleDSResyncPhase);
-    AddHandler(&ResyncFimProcessor::HandleDSResyncPhaseInodeListReady);
     AddHandler(&ResyncFimProcessor::HandleDSResyncReady);
     AddHandler(&ResyncFimProcessor::HandleDSResyncInfo);
     AddHandler(&ResyncFimProcessor::HandleDSResync);
@@ -715,10 +714,16 @@ class ResyncFimProcessor
       r.SetNormalReply(reply);
       it->second.phase = 0;
     }
-    boost::shared_ptr<IFimSocket> ms_socket =
-        server_->tracker_mapper()->GetMSFimSocket();
-    if (ms_socket)
-      ms_socket->WriteMsg(MakePhaseInodeListFim<DSResyncPhaseInodeListFim>());
+    {
+      boost::unique_lock<MUTEX_TYPE> lock;
+      FIM_PTR<DSResyncPhaseInodeListFim> ms_fim =
+          MakePhaseInodeListFim<DSResyncPhaseInodeListFim>();
+      (*ms_fim)->ds_group = server_->store()->ds_group();
+      boost::shared_ptr<IReqEntry> entry =
+          server_->tracker_mapper()->GetMSTracker()->AddRequest(ms_fim, &lock);
+      entry->OnAck(boost::bind(
+          &ResyncFimProcessor::DSResyncPhaseInodeListReplied, this));
+    }
     {
       boost::unique_lock<boost::shared_mutex> lock;
       server_->WriteLockDSGState(&lock);
@@ -741,20 +746,11 @@ class ResyncFimProcessor
     return true;
   }
 
-  bool HandleDSResyncPhaseInodeListReady(
-      const FIM_PTR<DSResyncPhaseInodeListReadyFim>& fim,
-      const boost::shared_ptr<IFimSocket>& peer) {
-    size_t len = fim->tail_buf_size();
-    if (!enabled_)
-      return true;
-    if (len == 0 ||
-        fim->tail_buf_size() != phase_resync_list_.size() * sizeof(InodeNum))
-      return true;
-    if (std::memcmp(phase_resync_list_.data(), fim->tail_buf(), len) != 0)
-      return true;
-    ms_ready_ = true;
-    NotifyIfPhaseReady();
-    return true;
+  void DSResyncPhaseInodeListReplied() {
+    if (enabled_) {
+      ms_ready_ = true;
+      NotifyIfPhaseReady();
+    }
   }
 
   void NotifyIfPhaseReady() {

@@ -32,6 +32,7 @@
 #include "op_completion_mock.hpp"
 #include "posix_fs_mock.hpp"
 #include "req_entry.hpp"
+#include "req_entry_mock.hpp"
 #include "req_tracker_mock.hpp"
 #include "shaped_sender.hpp"
 #include "shaped_sender_mock.hpp"
@@ -83,6 +84,8 @@ class DSResyncTest : public ::testing::Test {
   MockITrackerMapper* tracker_mapper_;
   MockITimeKeeper* dsg_ready_time_keeper_;
   boost::shared_ptr<MockIReqTracker> ds_tracker_;
+  boost::shared_ptr<MockIReqTracker> ms_tracker_;
+  boost::shared_ptr<MockIReqEntry> ms_phase_req_entry_;
   boost::shared_ptr<MockIFimSocket> ms_fim_socket_;
 
   DSResyncTest()
@@ -91,6 +94,8 @@ class DSResyncTest : public ::testing::Test {
         store_(new MockIStore),
         resync_fim_processor_(MakeResyncFimProcessor(&server_)),
         ds_tracker_(new MockIReqTracker),
+        ms_tracker_(new MockIReqTracker),
+        ms_phase_req_entry_(new MockIReqEntry),
         ms_fim_socket_(new MockIFimSocket) {
     resync_sender_->SetShapedSenderMaker(s_sender_maker_.GetMaker());
     resync_mgr_->SetResyncSenderMaker(sender_maker_.GetMaker());
@@ -110,11 +115,14 @@ class DSResyncTest : public ::testing::Test {
         .WillRepeatedly(Return(3));
     EXPECT_CALL(*tracker_mapper_, GetDSTracker(3, 1))
         .WillRepeatedly(Return(ds_tracker_));
+    EXPECT_CALL(*tracker_mapper_, GetMSTracker())
+        .WillRepeatedly(Return(ms_tracker_));
     EXPECT_CALL(*tracker_mapper_, GetMSFimSocket())
         .WillRepeatedly(Return(ms_fim_socket_));
   }
 
   ~DSResyncTest() {
+    Mock::VerifyAndClear(ms_tracker_.get());
     Mock::VerifyAndClear(tracker_mapper_);
   }
 
@@ -127,7 +135,8 @@ class DSResyncTest : public ::testing::Test {
   // that callers can use them after the call.
   void InitFimProcessor(MockIDirIterator* dir_iterator,
                         boost::shared_ptr<MockIFimSocket>* fim_sockets,
-                        FIM_PTR<IFim>* fims, uint64_t* req_id) {
+                        FIM_PTR<IFim>* fims, uint64_t* req_id,
+                        ReqAckCallback* ack_callback_ret) {
     for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i) {
       fim_sockets[i].reset(new MockIFimSocket);
       FIM_PTR<DSResyncListFim> lfim = DSResyncListFim::MakePtr();
@@ -169,9 +178,12 @@ class DSResyncTest : public ::testing::Test {
     }
     FIM_PTR<IFim> efim;
     EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
-        .WillOnce(SaveArg<0>(&efim))
-        .WillOnce(DoDefault());
+        .WillOnce(SaveArg<0>(&efim));
+    EXPECT_CALL(*ms_tracker_, AddRequest(_, _))
+        .WillOnce(Return(ms_phase_req_entry_));
     EXPECT_CALL(*thread_group_, EnqueueAll(_));
+    EXPECT_CALL(*ms_phase_req_entry_, OnAck(_, false))
+        .WillOnce(SaveArg<0>(ack_callback_ret));
 
     resync_fim_processor_->Process(DSResyncPhaseFim::MakePtr(),
                                    fim_sockets[kNumDSPerGroup - 2]);
@@ -585,13 +597,6 @@ TEST_F(DSResyncTest, ResyncMgrExceptional) {
 }
 
 TEST_F(DSResyncTest, ResyncFimProcessorDisabled) {
-  // Ignore DSResyncPhaseInodeListReadyFim
-  FIM_PTR<DSResyncPhaseInodeListReadyFim> ms_fim =
-      DSResyncPhaseInodeListReadyFim::MakePtr();
-  ms_fim = DSResyncPhaseInodeListReadyFim::MakePtr(sizeof(InodeNum));
-  *(reinterpret_cast<InodeNum*>(ms_fim->tail_buf())) = 4;
-  resync_fim_processor_->Process(ms_fim, ms_fim_socket_);
-
   // Handling of DSResyncFim
   boost::shared_ptr<MockIFimSocket> fim_socket(new MockIFimSocket);
   FIM_PTR<IFim> reply;
@@ -664,7 +669,8 @@ TEST_F(DSResyncTest, ResyncFimProcessorNoResyncFim) {
   EXPECT_CALL(*posix_fs_, Sync());
   EXPECT_CALL(completion_handler_, Call(true));
 
-  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id);
+  ReqAckCallback ack_callback;
+  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id, &ack_callback);
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i) {
     DSResyncPhaseReplyFim& fim = dynamic_cast<DSResyncPhaseReplyFim&>(*fims[i]);
     EXPECT_EQ(0U, fim.tail_buf_size());
@@ -704,7 +710,8 @@ TEST_F(DSResyncTest, ResyncFimProcessorReady) {
       .WillOnce(Return(false));
   EXPECT_CALL(*store_, FreeData(0x5, true));
 
-  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id);
+  ReqAckCallback ack_callback;
+  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id, &ack_callback);
 
   FSTime mtime = {1234567890ULL, 987654321};
   for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i) {
@@ -729,21 +736,11 @@ TEST_F(DSResyncTest, ResyncFimProcessorReady) {
     resync_fim_processor_->Process(efim, fim_sockets[i]);
   }
 
-  // MS not ready
-  resync_fim_processor_->Process(DSResyncReadyFim::MakePtr(), fim_sockets[0]);
-  // Ignore non-matching MS fim
-  FIM_PTR<DSResyncPhaseInodeListReadyFim> ms_fim =
-      DSResyncPhaseInodeListReadyFim::MakePtr();
-  resync_fim_processor_->Process(ms_fim, ms_fim_socket_);
-  // Ignore non-matching MS fim
-  ms_fim = DSResyncPhaseInodeListReadyFim::MakePtr(sizeof(InodeNum));
-  *(reinterpret_cast<InodeNum*>(ms_fim->tail_buf())) = 4;
-  resync_fim_processor_->Process(ms_fim, ms_fim_socket_);
-  // MS ready seen
-  *(reinterpret_cast<InodeNum*>(ms_fim->tail_buf())) = 5;
-  resync_fim_processor_->Process(ms_fim, ms_fim_socket_);
+  // MS reply
+  ack_callback(ms_phase_req_entry_);
+
   // Some DS not ready
-  for (unsigned i = 1; i < kNumDSPerGroup - 2; ++i)
+  for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i)
     resync_fim_processor_->Process(DSResyncReadyFim::MakePtr(), fim_sockets[i]);
 
   // The last DSResyncReadyFim causes all the above to be replied
@@ -780,7 +777,9 @@ TEST_F(DSResyncTest, ResyncFimProcessorEarlyResyncEnd) {
       .WillOnce(Return(false));
   EXPECT_CALL(*store_, FreeData(0x5, true));
 
-  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id);
+  ReqAckCallback ack_callback;
+  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id, &ack_callback);
+  ack_callback(ms_phase_req_entry_);
 
   FSTime mtime = {1234567890ULL, 987654321};
   for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i) {
@@ -819,7 +818,9 @@ TEST_F(DSResyncTest, ResyncFimProcessorEarlyResyncEnd) {
   EXPECT_CALL(*fim_sockets[1], WriteMsg(_))
       .WillOnce(DoDefault())
       .WillOnce(SaveArg<0>(fims + 1));
-  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*ms_tracker_, AddRequest(_, _))
+      .WillOnce(Return(ms_phase_req_entry_));
+  EXPECT_CALL(*ms_phase_req_entry_, OnAck(_, false));
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*posix_fs_, Sync());
   EXPECT_CALL(completion_handler_, Call(true));
@@ -850,7 +851,9 @@ TEST_F(DSResyncTest, ResyncFimProcessorCancelledContent) {
       .WillOnce(Return(false));
   EXPECT_CALL(*store_, FreeData(0x2a, true));
 
-  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id);
+  ReqAckCallback ack_callback;
+  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id, &ack_callback);
+  ack_callback(ms_phase_req_entry_);
 
   for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i) {
     if (i < 2) {  // Two Fims actually received, cancelling each other
@@ -869,7 +872,9 @@ TEST_F(DSResyncTest, ResyncFimProcessorCancelledContent) {
   // No content is written out, data writer not obtained
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
     EXPECT_CALL(*fim_sockets[i], WriteMsg(_)).Times(i < 2 ? 2 : 1);
-  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*ms_tracker_, AddRequest(_, _))
+      .WillOnce(Return(ms_phase_req_entry_));
+  EXPECT_CALL(*ms_phase_req_entry_, OnAck(_, false));
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*posix_fs_, Sync());
   EXPECT_CALL(completion_handler_, Call(true));
@@ -897,7 +902,9 @@ TEST_F(DSResyncTest, ResyncFimProcessorLateResyncEnd) {
       .WillOnce(Return(false));
   EXPECT_CALL(*store_, FreeData(0x2a, true));
 
-  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id);
+  ReqAckCallback ack_callback;
+  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id, &ack_callback);
+  ack_callback(ms_phase_req_entry_);
 
   // send resync on socket 1 and 2
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i) {
@@ -941,7 +948,9 @@ TEST_F(DSResyncTest, ResyncFimProcessorLateResyncEnd) {
   // send list on socket 2, trigger full completion
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
     EXPECT_CALL(*fim_sockets[i], WriteMsg(_));
-  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*ms_tracker_, AddRequest(_, _))
+      .WillOnce(Return(ms_phase_req_entry_));
+  EXPECT_CALL(*ms_phase_req_entry_, OnAck(_, false));
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
   EXPECT_CALL(*posix_fs_, Sync());
   EXPECT_CALL(completion_handler_, Call(true));
@@ -968,7 +977,8 @@ TEST_F(DSResyncTest, ResyncFimProcessorTooManySockets) {
       .WillOnce(Return(false));
   EXPECT_CALL(*store_, FreeData(0x2a, true));
 
-  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id);
+  ReqAckCallback ack_callback;
+  InitFimProcessor(dir_iterator, fim_sockets, fims, &req_id, &ack_callback);
 
   // send resync on socket 1 and end to others
   for (unsigned i = 0; i < kNumDSPerGroup - 2; ++i) {
@@ -1093,7 +1103,10 @@ TEST_F(DSResyncTest, ResyncFimProcessorOptResync) {
   for (unsigned i = 0; i < kNumDSPerGroup - 1; ++i)
     EXPECT_CALL(*fim_sockets[i], WriteMsg(_))
         .WillOnce(SaveArg<0>(&reply));
-  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_)).Times(2);
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_));
+  EXPECT_CALL(*ms_tracker_, AddRequest(_, _))
+      .WillOnce(Return(ms_phase_req_entry_));
+  EXPECT_CALL(*ms_phase_req_entry_, OnAck(_, false));
   EXPECT_CALL(*thread_group_, EnqueueAll(_));
 
   FIM_PTR<DSResyncPhaseFim> pfim = DSResyncPhaseFim::MakePtr();

@@ -33,6 +33,8 @@
 #include "fims.hpp"
 #include "logger.hpp"
 #include "member_fim_processor.hpp"
+#include "req_entry.hpp"
+#include "req_entry_impl.hpp"
 #include "req_tracker.hpp"
 #include "shutdown_mgr.hpp"
 #include "thread_fim_processor.hpp"
@@ -356,6 +358,7 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
     AddHandler(&MSCtrlFimProcessor::HandleDSGResize);
     AddHandler(&MSCtrlFimProcessor::HandleConfigChange);
     AddHandler(&MSCtrlFimProcessor::HandleConfigList);
+    AddHandler(&MSCtrlFimProcessor::HandleDSResyncPhaseInodeList);
   }
 
  private:
@@ -561,6 +564,22 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
     r.SetNormalReply(reply);
     return true;
   }
+
+  bool HandleDSResyncPhaseInodeList(
+      const FIM_PTR<DSResyncPhaseInodeListFim>& fim,
+      const boost::shared_ptr<IFimSocket>& peer) {
+    InodeNum* inodes = reinterpret_cast<InodeNum*>(fim->tail_buf());
+    std::vector<InodeNum> resyncing;
+    std::size_t size = fim->tail_buf_size() / sizeof(InodeNum);
+    std::copy(inodes, inodes + size, std::back_inserter(resyncing));
+    server_->dsg_op_state_mgr()->SetDsgInodesResyncing(
+        (*fim)->ds_group, resyncing);
+    FIM_PTR<ResultCodeReplyFim> reply = ResultCodeReplyFim::MakePtr();
+    reply->set_req_id(fim->req_id());
+    (*reply)->err_no = 0;
+    peer->WriteMsg(reply);
+    return true;
+  }
 };
 
 /**`
@@ -641,20 +660,37 @@ class DSCtrlFimProcessor : public MemberFimProcessor<DSCtrlFimProcessor> {
       std::vector<InodeNum> resyncing;
       std::copy(inodes, inodes + size, std::back_inserter(resyncing));
       server_->dsg_op_state_mgr()->SetDsgInodesResyncing(group, resyncing);
-      server_->dsg_op_state_mgr()->OnInodesCompleteOp(
-          resyncing,
-          boost::bind(&DSCtrlFimProcessor::SendPhaseInodeListReply,
-                      this, fim, peer));
+      MSState ms_state = server_->state_mgr()->GetState();
+      if (ms_state == kStateActive) {
+        boost::shared_ptr<IReqTracker> tracker = server_->tracker_mapper()->
+            GetMSTracker();
+        boost::shared_ptr<IReqEntry> entry = MakeReplReqEntry(tracker, fim);
+        boost::unique_lock<MUTEX_TYPE> repl_lock;
+        if (tracker->AddRequestEntry(entry, &repl_lock)) {
+          entry->OnAck(boost::bind(&DSCtrlFimProcessor::WaitInodesCompleteOp,
+                                   this, resyncing, fim, peer));
+          return true;
+        }
+      }
+      WaitInodesCompleteOp(resyncing, fim, peer);
     }
     return true;
   }
 
-  void SendPhaseInodeListReply(const FIM_PTR<DSResyncPhaseInodeListFim>& fim,
-                               const boost::shared_ptr<IFimSocket>& peer) {
-    size_t len = fim->tail_buf_size();
-    FIM_PTR<DSResyncPhaseInodeListReadyFim> reply =
-        DSResyncPhaseInodeListReadyFim::MakePtr(len);
-    std::memcpy(reply->tail_buf(), fim->tail_buf(), len);
+  void WaitInodesCompleteOp(std::vector<InodeNum> resyncing,
+                            const FIM_PTR<IFim>& fim,
+                            const boost::shared_ptr<IFimSocket>& peer) {
+    server_->dsg_op_state_mgr()->OnInodesCompleteOp(
+        resyncing,
+        boost::bind(&DSCtrlFimProcessor::ReplyPhaseInodeList, this, fim, peer));
+  }
+
+  void ReplyPhaseInodeList(const FIM_PTR<IFim>& fim,
+                           const boost::shared_ptr<IFimSocket>& peer) {
+    FIM_PTR<ResultCodeReplyFim> reply = ResultCodeReplyFim::MakePtr();
+    reply->set_req_id(fim->req_id());
+    reply->set_final();
+    (*reply)->err_no = 0;
     peer->WriteMsg(reply);
   }
 };
