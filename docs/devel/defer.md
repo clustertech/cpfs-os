@@ -14,12 +14,14 @@ desirable.
 
 There are a few reasons that a FIM needs to be deferred.  They include:
 
-  * DS resynchronization ("all-defer").  During DS resynchronization,
-    the processing of all FC-generated FIMs are deferred.
+  * DS resynchronization ("resync-deferment").  During DS directory
+    resynchronization, the processing of all or some FC-generated FIMs
+    are deferred (all during directory resync, and a number of inodes
+    controlled by -o data-sync-num-inodes during data resync).
   * Inode truncation ("inode-defer").  Inode truncation cannot be done
-    at the same time when a write is being done, otherwise chaos ensue.
-    So the MS performs an inode truncation only after the DS are be
-    instructed to temporarily defer writes to that inode.
+    at the same time when a write is being done, otherwise chaos
+    ensue.  So the MS performs an inode truncation only after the DSs
+    are instructed to temporarily defer writes to that inode.
   * Distress mode, i.e., low disk space ("distress-defer").  When disk
     space runs low in at least one DS of the DSG, there is a danger
     that a write results in ENOSPC.  To make write roll-back possible
@@ -58,10 +60,11 @@ to be deferred again, due to resynchronization.  But the DS must
 arrange it to be done before B.
 
 We pose a conceptual ordering in which FIMs enter the data structures:
-the FIM is first processed for all-defer, then for inode-defer, and
-finally for distress-defer.  In the situations above, the inode-defer
-handling of a FIM completes when all-defer is active.  We use two data
-structures to handle the case, which we describe below.
+the FIM is first processed for resync-deferment, then for inode-defer,
+and finally for distress-defer.  In the situations above, the
+inode-defer handling of a FIM completes when resync-deferment is
+active.  We use two data structures to handle the case, which we
+describe below.
 
 ## FIM defer manager ##
 
@@ -82,13 +85,13 @@ operations:
 
 Care must be exercised so that the state of a manager is synchronized
 with the state of the FIM manager in some way.  E.g., for the
-all-defer situation, we use a reader-writer lock to synchronize the
-change of the DSG state of the DS.  During any FIM processing, a read
-lock is held, so that the DSG state change can only occur when all FIM
-processing is suspended.  During the read lock, the FIM processing
-will check whether its own all-defer manager needs to be activated,
-and is assured that if it is not, the same state is maintained
-throughout the FIM processing.
+resync-deferment situation, we use a reader-writer lock to synchronize
+the change of the DSG state of the DS.  During any FIM processing, a
+read lock is held, so that the DSG state change can only occur when
+all FIM processing is suspended.  During the read lock, the FIM
+processing will check whether its own resync-deferment manager needs
+to be activated or have inodes added to it, and is assured that if it
+is not, the same state is maintained throughout the FIM processing.
 
 In contrast, inode-defer is handled completely in the worker.  This is
 because only one worker will handle the inode specified by the MS

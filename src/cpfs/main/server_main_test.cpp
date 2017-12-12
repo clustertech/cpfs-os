@@ -44,6 +44,7 @@ const char* kDefaultArgs[] = {
   "--ds-host=192.168.1.2",
   "--ds-port=3333",
   "--log-level=5",
+  "--data-sync-num-inodes=1024",
   0
 };
 
@@ -75,6 +76,7 @@ TEST_F(ServerMainTest, ParseOpts) {
   ASSERT_EQ(3000, configs.ms1_port());
   ASSERT_EQ("192.168.1.4", configs.ms2_host());
   ASSERT_EQ(4000, configs.ms2_port());
+  ASSERT_EQ(1024U, configs.data_sync_num_inodes());
 
   // Invalid role
   arg_vector = MakeArgVector(kDefaultArgs);

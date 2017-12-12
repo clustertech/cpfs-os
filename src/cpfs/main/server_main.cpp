@@ -192,7 +192,7 @@ bool ParseOpts(int argc, char* argv[], ConfigMgr* configs) {
        po::value<double>()->default_value(kDefaultSocketReadTimeout),
        (boost::format("The socket read timeout. Default: %.2f seconds")
             % kDefaultSocketReadTimeout).str().c_str())
-      ("data_sync_num_inodes",
+      ("data-sync-num-inodes",
        po::value<unsigned>()->default_value(kDefaultDataSyncNumInodes),
        (boost::format("The number of inodes to sync in each phase. Default: %u")
             % kDefaultDataSyncNumInodes).str().c_str());
@@ -259,6 +259,7 @@ bool ParseOpts(int argc, char* argv[], ConfigMgr* configs) {
     configs->set_pidfile(vm["pidfile"].as<std::string>());
   configs->set_heartbeat_interval(vm["heartbeat-interval"].as<double>());
   configs->set_socket_read_timeout(vm["socket-read-timeout"].as<double>());
+  configs->set_data_sync_num_inodes(vm["data-sync-num-inodes"].as<unsigned>());
   return true;
 }
 

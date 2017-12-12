@@ -65,7 +65,7 @@ class FimDeferMgr : public IFimDeferMgr {
 };
 
 /**
- * Implementation of LockedInodeMgr
+ * Implement InodeFimDeferMgr
  */
 class InodeFimDeferMgr : public IInodeFimDeferMgr {
  public:
