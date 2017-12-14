@@ -429,7 +429,7 @@ using a composite Fim processor.  For most requests, this ends up
 putting the Fim to the thread group, which feed the Fims to the
 workers.
 
-### Request completion checking ###
+### Operation completion checking ###
 
 At times it is handy to perform some work once we know that all inode
 operations already submitted to an inode is already completed.  This
@@ -440,7 +440,7 @@ register themselves to the checker, so that other code may arrange a
 callback to be called when all such operations are completed for an
 inode.  A simplified version is used by the client when we make some
 operations to provide a consistency guarantee.  In this case, the
-client FUSE file handle includes a `ReqCompletionChecker` initiating
+client FUSE file handle includes a `OpCompletionChecker` initiating
 actions once operations requested for the file are all completed.
 
 ### Miscellaneous utilities ###
@@ -519,6 +519,11 @@ work is done by the `DSLocker` (see `server/ms/ds_locker.hpp`), and in
 the DS side the work is node by the `InodeFimDeferMgr` (see
 `server/fim_defer.hpp`).
 
+During DS resynchronization, it is required that the MS refrain from
+performing such DS truncations.  The operation also needs to wait
+until existing truncations to complete.  This is managed in the
+`DSGOpStateMgr` (see `server/ms/dsg_op_state.hpp`).
+
 ### Dirty attributes ###
 
 As discussed in the design document, we need to know which inodes are
@@ -578,7 +583,8 @@ it is registered with the `OpCompletionCheckerSet` (see
 incompletion requests.  When a freeze is needed, it waits until all
 registered requests of an inode of the whole system has been
 completed, and use the `FimDeferMgr` (see `server/fim_defer.hpp`) to
-defer Fims for that inode until the inode is unfreezed.
+defer Fims for that inode until the inode is unfreezed.  The
+`defer.md` file describes these in more details.
 
 If a peer DS fails, the DS group moves into the degraded mode.  In
 this mode, the DS serving checksum for a data block also serve to

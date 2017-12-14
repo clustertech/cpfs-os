@@ -12,6 +12,9 @@ from the expectation of some users.
   * In the above case, if a traversal of the directory is done
     encompassing the failover time, multiple entries / skipped entries
     may results.
+  * If DS resync fails in the middle and two writes to the same inode
+    and the same segment have been issued, there is a chance that
+    their ordering is reversed.
   * Filesystem statistics (as reported by `statvfs(2))` are not
     accurate, and will change after MS and DS failover and resync.
   * Multi-segment writes are not atomic.  If an operation fails, e.g.,
