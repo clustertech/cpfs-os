@@ -47,11 +47,10 @@ Each DS is in one *DS group*, and each DS group has 5 DSs.  Each
 request to a DS is replicated to another DS, using RAID-5-like
 checksum techniques.  Initially, the DS group is only considered
 *active* when all 5 DSs are working.  Once started, one of the DS in
-each DS group may fail.  The DS and FC notifies the active MS about
-such scenarios, and when a consensus is reached the MS determines
-that the DS has failed.  All peers are notified that the DS group of
-the DS is *active* but *degraded* if only one DS of the group is
-currently failed, and is *inactive* if more servers have failed.
+each DS group may fail.  When the MS detects such scenarios, all peers
+are notified that the DS group is *degraded* if only one DS of the
+group is currently failed, and is *failed* if more servers have
+failed.
 
 ## General strategy ##
 
@@ -74,7 +73,12 @@ currently failed, and is *inactive* if more servers have failed.
   * For simplicity of implementation, when the standby MS is
     resynchronizing itself with the active MS, services to FC are
     suspended: only heartbeat Fims are processed, other Fims are
-    queued.
+    queued.  In contrast, DS resynchronization is partially online:
+    After the directory is resynchronized, service to FCs will resume
+    when the DS group is performing data resynchronization.
+  * Files are kept in various servers whenever the system is degraded,
+    to speed up resynchronization (e.g., to avoid the need to rescan
+    all inodes).
   * Failures are detected by the absence of heartbeat Fims to the MS,
     and when that happens the peer is assume to have failed.  This
     results into a topology change on the active MS side, and a MS
@@ -365,8 +369,8 @@ proceed in phases.  They are described as follows.
 ## Resynchronization ##
 
 When a replacement MS / DS is started or restarted, it is started in
-an inactive state.  In the initial version of CPFSv2, a simple
-stop-the-world strategy is used to rebuild the restarted or new MS / DS:
+an inactive state.  A simple stop-the-world strategy is used to
+rebuild the restarted or new MS:
 
   * The active MS is notified, so that it can coordinate the whole
     cluster to a mode to get the new or restarted MS / DS ready.
@@ -380,12 +384,21 @@ Such simple strategy is used because we feel that the need of
 replacing servers is rare, so correctness and ease of implementation
 are more important than user experience.
 
-Future versions may allow online rebuilding of new MS and DS, if needs
-arise.
+To rebuild the restarted or new DS, the stop the world strategy is
+also used up to the point where all the DS in the DS group knows which
+files need resynchronization.  After that, the restarted / new DS
+coordinates phases of data resynchronization, each reconstructing a
+number of inodes (32 by default, can be modified by command line
+option).  During such a phase, FC requests to these inodes are
+deferred, but requests to other inodes proceed as if the DS is still
+degraded (in case resynchronization is already completed, the FC is
+requested to resend the request to the target DS).
+
+### Rebuilding MS ###
 
 Once active MS processors are stopped, and all DSs have
 acknowledged the DSG state change Fim (for DS resync), the target
-MS / DS is populated.  For rebuilding MS:
+MS is populated.
 
   * The active MS sends a stream of Fims about the content of the data
     directory of the active MS, opened / pending unlink inode
@@ -395,29 +408,13 @@ MS / DS is populated.  For rebuilding MS:
   * The MS is set to be standby, and the FC Fim processors in the
     active MS are restarted.
 
-For rebuilding DS:
-
-  * Each of the DS other than the target DS sending a stream of resync
-    info Fims (which contains mtime and size information) and DS
-    resync Fims (which are inode-offset tagged file content) to the
-    target DS, in a well-defined ordering.  Once all resync Fims are
-    sent, the DS sends an "end" Fim to the target DS.
-  * The target DS remove the old content, and then use these Fims to
-    regenerate the file mtime and date, compute the checksum and
-    rebuild the file content.
-  * Once all end Fims are recevied, the target DS sends an "end" Fim
-    to the MS.
-  * The MS sets the DSG state to ready, and broadcast the information
-    to the DSG and the standby MS.  The FC Fim processors in the
-    active MS are restarted.
-
-When a MS or DS is restarted sufficiently quickly, the data in it are
-still mostly valid.  So it is possible to optimize the
-resynchronization by sending only inodes modified after the
-failover. In particular, we need to resynchronize an inode of a
-previously failed server only if (a) it is modified before the failure
-but the replication reply is not yet received, or (b) it is modified
-or (c) deleted in the currently active server.
+When a MS is restarted sufficiently quickly, the data in it are still
+mostly valid.  So it is possible to optimize the resynchronization by
+sending only inodes modified after the failover. In particular, we
+need to resynchronize an inode of a previously failed server only if
+(a) it is modified before the failure but the replication reply is not
+yet received, or (b) it is modified or (c) deleted in the currently
+active server.
 
 It is too hard to check for (a) efficiently, so instead we check
 whether the file is very new compared to a time when the server is
@@ -440,18 +437,97 @@ The processing for the MS is as follows:
     sent to the target MS and be removed accordingly. This handles
     case (c).
 
-The processing for the DS is as follows:
+### Rebuilding DS ###
 
-  * Each DS other than the target DS generate a stream of DS directory
-    Fims (containing only inode numbers and an indication about
-    whether it is new) for each inode that it stores.
+To allow DS data resynchronization to be carried out when FC requests
+are still being serviced, DS resynchronization is more involved.  We
+need to ensure that the inodes being resynchronized are properly
+deferred before such resynchronization can start.  We also need to
+ensure that there is no data truncation request from the MS during the
+whole period of time.
+
+To initialize, the following processing is done, during which the MS
+and all DSs will defer requests from FCs:
+
+  * The active MS announces the DS to be in resync state.  The MS and
+    all DSs move to a state where all FC requests are deferred.
+  * Once all DSs acknowledge the state change, the MS sends a message
+    to all DSs to start the resynchronization.
+  * Each non-target DS generates a stream of DS directory Fims
+    containing recently updated inodes that it stores.  If the target
+    DS is new and contains no data, the non-target DSs simply send all
+    inode numbers they keep.
+  * The non-target DSs send a stream of recently removed DS, and upon
+    receiving them the target DS deletes the involved inodes.
   * The target DS checks its own directory to find the inodes that are
-    either (i) missing in all peers, or (ii) updated in any of the
-    peers or missing in itself.  In either case the local inode is
-    removed.  The inodes involved in (ii) are aggregated to a resync
-    list.
-  * The target DS sends the resync list to all peer DSs, so that the
-    DSs only send these inodes during the DS resync process.
+    recent, and remove them.  This list is combined with the updated
+    inode lists sent by the peers to from the consolidated resync
+    inode list.
+  * The non-target DSs requests for the consolidated resync inode list
+    with multiple Fims, until the whole list is obtained.
+  * The target DS sends a message to the MS to signify the completion
+    of partial resynchronization.  The MS responds by restarting the
+    FC Fim processors, thus allowing FC requests to be handled again.
+
+Like MS resynchronization, the non-target DSs keep lists of "recently
+modified" and "removed" inodes in degrade mode, so that finding such
+lists upon DS restart involves no scanning.  In such cases, these
+steps are expected to be fast.  Once completed, phases of data
+resynchronization starts:
+
+  * The non-target DS requests for a list of inodes to resynchronize
+    in a new phase, which also signifies the end of data for any
+    previous phase.
+  * Once the target DS receives such requests from all other DSs, it
+    performs the following steps:
+      * It completes all pending file regeneration in previous phase.
+      * It extracts the leading inodes from the consolidated resync
+        inode list to form the resyncing inode list.
+      * It replies the inode list request of the non-target DSs with
+        the resyncing inode list.
+      * It sends a request to the MS to prepare for the resyncing
+        inode list to be resynchronized.
+  * When the non-target DS receives the resyncing inode list, they set
+    it to their own "deferment" data structures, requesting that FC
+    requests to these inodes to be deferred while allowing FC requests
+    for other inodes to be serviced.  A "phase ready request" is sent
+    once the pending checksum updates of inodes in the resyncing inode
+    list are all completed.
+  * The MS receiving the request does the following:
+      * It sets the inode list to a data structure which defers the MS
+        to issue DS truncate requests for these inodes.
+      * It replicates the requests to the standby MS, so that in case
+        an MS failover occurs at this point the new MS also knows that
+        the inodes are being resynchronized.  It then waits for the reply
+        of this replication before continuing.
+      * It waits until the already started truncations of those inodes
+        completes, and replies the request.
+  * Once the target DS received the ready requests from all other DSs,
+    and received the reply from the MS about resynchronization
+    preparation, it performs the following steps:
+      * It replies all other DSs, allowing them to start sending the
+        resynchronization data.
+      * It sets the resyncing inode list to its own deferment
+        structure, so that FC requests to other inodes are serviced.
+  * Once the non-target DS receives the reply, they start sending the
+    target DS a stream of Fims containing:
+      * File information such as mtime and file size.
+      * Inode-offset tagged file content of the inodes, in a
+        well-defined ordering.
+  * The target DS uses these Fims to regenerate the file mtime and
+    date, compute the checksum and rebuild the file content.
+  * Once a non-target DS completes sending file content for the
+    resyncing inode list of the current phase, it loops back and
+    requests for a new resyncing inode list.
+  * A new phase starts once the target DS receives such requests from
+    all other DSs.
+
+Once all inodes in the consolidated resync inode list are processed,
+the target DS sends to the MS an inode list with no inode, signifying
+the end of data resync.  A similar no-inode list is replied to the DS
+to terminate their loops sending resynchronization data.  The MS sets
+the DSG state to ready, and broadcast the information to the DSG and
+the standby MS.
 
 ## Disk full ##
 
@@ -471,7 +547,7 @@ fails due to disk allocation problem, we cannot deallocate the space
 the operation allocated.  Nevertheless, we can overwrite the space
 allocated with previous data without cost to the no-error case.  This
 is because we need to read the data for checksum computation anyway,
-we just need to keep that data long enough.  This is exactly what the
+we just need to keep that data long enough.  This is exactly how the
 DS services a write or checksum update request.
 
 On the other hand, there are still complications when checksum update
@@ -484,12 +560,12 @@ disk might have some file removed, the corresponding checksum update
 might succeed).  This makes it very hard to revert the changes.
 
 We take a simplistic approach to handle the issue.  When the MS, due
-to space maintenance, determine that it is likely that the DS will
+to space maintenance, determines that it is likely that the DS will
 become full soon, it asks the DS to operate in distressed mode.  In
 this mode, all writes of all DS inodes are serialized: they wait until
 the success or failure of the checksum update to be known, before
 allowing the next operation on the same inode to proceed.  This is
-a rather slow method, but protect the filesystem against corruption.
+a rather slow method, but protects the filesystem against corruption.
 
 We also note that we use the NFS approach to report disk full errors:
 it is reported on the next `write()` or `close()` system call.  Fsync,
@@ -497,10 +573,9 @@ close, getattr and setattr operations wait until all previous write
 operations to have replicated before proceeding.
 
 It can also happen that the disk full condition occurs when a failed
-DS is being recovered.  In this case the handling of the file is
-deferred until the handling of other files, hopefully freeing
-sufficient space for the operation to complete.  If no other file can
-proceed further, the DS recovery is declared to have failed.
+DS is being recovered.  In this case the error is silently ignore at
+the moment (later we will probably change the behavior so that the
+condition is detected and cause the resynchronization to abort).
 
 ## Full Shutdown ##
 

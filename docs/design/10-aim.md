@@ -32,7 +32,8 @@ We achieve the above in our filesystem with the following strategy.
     (see below).
   * For (2), we make the access API light-weight.  We also allow
     clients to use caches to improve the system performance.  Adding
-    these to a low-latency network inter-connect, we would good IOPS.
+    these to a low-latency network inter-connect, we would have good
+    IOPS.
   * For (3), we divide the data server into RAID groups.  Data in each
     RAID group have redundancy within the group, to protect against
     the loss of servers.  The data in each meta-data server and data
@@ -44,11 +45,11 @@ We achieve the above in our filesystem with the following strategy.
     their data in their local storage.  This way we fully utilize the
     capability of all servers in the system.
   * For (5), we use FUSE (Filesystem in USEr space) to build our
-    software, coupled with libuv to provide asynchronous programming
-    constructs.  The system will directly use the available local
-    filesystem as storage, rather than devising its own.  These are
-    made possible with the recent advance of local filesystem
-    performance.
+    software, coupled with Boost Asio to provide asynchronous
+    programming constructs.  The system will directly use the
+    available local filesystem as storage, rather than devising its
+    own.  These are made possible with the recent advance of local
+    filesystem performance.
   * For (6), we provide the normal filesystem API.  Some weak cache
     coherency guarantees will be provided to allow more programs to
     run, while not degrading the performance too much.

@@ -59,25 +59,25 @@ it using a local directory with the following structure.
 
     [export_point]
     +- 000
-    |  +- 0000000000001
+    |  +- 0000000000000001
     |  |  +- a (symlink to R0000000000000002)
     |  |  +- b (directory with xattr user.cpfs.ino:0000000000000003)
     |  |  \- f (symlink to R0000000000000006)
-    |  +- 0000000000001x (empty file)
-    |  +- 0000000000002 (file containing a big hole)
-    |  +- 0000000000002x (empty file)
-    |  +- 0000000000003
+    |  +- 0000000000000001x (empty file)
+    |  +- 0000000000000002 (file containing a big hole)
+    |  +- 0000000000000002x (empty file)
+    |  +- 0000000000000003
     |  |  +- c (symlink to L0000000000000004)
     |  |  +- d (symlink to K0000000000000005)
     |  |  \- e (symlink to R0000000000000006)
-    |  +- 0000000000003x (empty file)
-    |  +- 0000000000004 (symlink to ../a)
-    |  +- 0000000000004x (empty file)
-    |  +- 0000000000005 (block device file, major/minor 1/5)
-    |  +- 0000000000005x (empty file)
-    |  +- 0000000000006 (file containing a big hole)
-    |  +- 0000000000006.1 (same inode as export_point/0...06 in MS)
-    |  +- 0000000000006x (empty file)
+    |  +- 0000000000000003x (empty file)
+    |  +- 0000000000000004 (symlink to ../a)
+    |  +- 0000000000000004x (empty file)
+    |  +- 0000000000000005 (block device file, major/minor 1/5)
+    |  +- 0000000000000005x (empty file)
+    |  +- 0000000000000006 (file containing a big hole)
+    |  +- 0000000000000006.1 (same inode as export_point/0...06 in MS)
+    |  +- 0000000000000006x (empty file)
     |  \- c
     +- 001
     \- ...
@@ -94,32 +94,31 @@ filesystem directory structure and the representation in MS:
      each of the first-level directory.
   1. Each inode in the filesystem (e.g., inode 4) is represented in MS
      by an entry in the second level of the MS representation (here,
-     `/000/0000000000004`), of the same type as the file it represents
-     (here, a symlink).  It is named by the 13 hex digits after those
-     used to choose the first-level directory.  We call such entries
-     in MS "inode files" or "inode directories".  The root directory
-     has the fixed inode 1, and is represented by the inode directory
-     `/000/0000000000001`.
+     `/000/0000000000000004`), of the same type as the file it
+     represents (here, a symlink), named by the hex digits of the
+     inode number.  We call such entries in MS "inode files" or "inode
+     directories".  The root directory has the fixed inode 1, and is
+     represented by the inode directory `/000/0000000000000001`.
   1. Each inode file has a corresponding empty control file storing
      extended attributes that CPFS uses.  The name is the same except
      for a "x" suffix.  E.g., the root directory has the control file
-     `/000/0000000000001x`.
+     `/000/0000000000000001x`.
   1. Each directory entry in the filesystem (e.g., `/b/c`) is
      represented in MS by a directory entry in the third level of the
-     MS representation (here, `/000/0000000000003/d`), under the inode
-     directory representing the parent (here, `/000/0000000000003`,
-     which represents `/b`).
+     MS representation (here, `/000/0000000000000003/c`), under the
+     inode directory representing the parent (here,
+     `/000/0000000000000003`, which represents `/b`).
   1. For directory entries which are subdirectories (e.g., `/b`), the
-     representation in MS (here, `/000/0000000000001/b`) is also a
+     representation in MS (here, `/000/0000000000000001/b`) is also a
      directory.  It has an extended attribute `cpfs.ino` in the user
      namespace to keep the inode number of the directory it represents
-     (here, `0000000000000003`).  This representation ensures that the
-     directory have the correct link count, for the benefits of
+     (here, `0000000000000000003`).  This representation ensures that
+     the directory have the correct link count, for the benefits of
      programs like `find` which takes an inode count of 2 to mean
      "this directory has no subdirectories and thus we don't need to
      pre-scan it for subdirectories during depth-first search".
   1. For other directory entries (e.g., `/a`), the representation in
-     MS (here, `/000/0000000000001/a`) is a symlink with the link
+     MS (here, `/000/0000000000000001/a`) is a symlink with the link
      target being the inode number of the entry (here,
      `R0000000000000002`).  The file type is encoded as a character:
      R, L, H, K, S and P represents Regular files, symLinks, cHaracter
@@ -132,9 +131,9 @@ filesystem directory structure and the representation in MS:
      full resync).  The type information is returned as part of the
      readdir FUSE method call.
   1. Multiple directory entries (e.g., `/b/e` and `/f`) may share the
-     same inode (here, `000/0000000000006`), a situation caused by
+     same inode (here, `000/0000000000000006`), a situation caused by
      hard-linking.  We make suffixed inode files in the second level
-     of the MS representation (here `/000/0000000000006.1`) to
+     of the MS representation (here `/000/0000000000000006.1`) to
      maintain correct link count in the MS.  We maintain the invariant
      that if there are n directory entries in the filesystem referring
      to a non-directory inode x, the representation would have n - 1
@@ -230,11 +229,12 @@ be removed in the standby MS as well after a potential failover /
 resync).
 
 The system also keeps other states of the filesystem, e.g., the locks
-held by FCs on various files, or the write token possessed by FCs.
-These are held in memory of MS, and are re-synchronized if a fail-over
-takes place.  When both the MS and its backup fail, these data will
-vanish, and thus the whole filesystem (FCs, MSs and DSs) needs to be
-restarted.  This can lead to the loss of recently written data.
+held by FCs on various files, or the records of file opening by FC to
+read and write files.  These are held in memory of MS, and are
+re-synchronized if a fail-over takes place.  When both the MS and its
+backup fail, these data will vanish, and thus the whole filesystem
+(FCs, MSs and DSs) needs to be restarted.  This can lead to the loss
+of recently written data.
 
 In the implementation, the MS is organized as one I/O thread getting
 data from all other servers and clients, together with a few worker
@@ -257,10 +257,10 @@ something like the following:
 
     export_point
     +- 000
-    |  +- 0000000000001.d (the data it stores for /a)
-    |  +- 0000000000001.c (the checksum it stores for /a)
-    |  +- 0000000000006.d (the data it stores for /b/e)
-    |  \- 0000000000006.c (the checksum it stores for /b/e)
+    |  +- 0000000000000001.d (the data it stores for /a)
+    |  +- 0000000000000001.c (the checksum it stores for /a)
+    |  +- 0000000000000006.d (the data it stores for /b/e)
+    |  \- 0000000000000006.c (the checksum it stores for /b/e)
     +- 001
     ...
 
@@ -272,11 +272,11 @@ pollution in the read-ahead buffer.
 
 The structure is the same for the whole group of DSs.  Like MS, the
 first level directory is the first 3 hex digits of the inode number,
-and the second level directory is the remaining 13 hex digits.  The
-two level structure is mainly to play nice with filesystems like ext4
-and XFS, which has a concept of block group or allocation group.
-Files within the same directory is likely to be given the same group,
-thus are less costly to seek around.  In CPFS, if a new directory is
+and the second level directory is the inode number in hex.  The two
+level structure is mainly to play nice with filesystems like ext4 and
+XFS, which has a concept of block group or allocation group.  Files
+within the same directory is likely to be given the same group, thus
+are less costly to seek around.  In CPFS, if a new directory is
 created, a random first-level directory is chosen, and an inode number
 is allocated from it.  This has the effect of allocating new
 directories in random groups, like local filesystems.  On the other
@@ -420,12 +420,6 @@ operations are unnecessary.  For this to work, we must be completely
 sure that no DS will process another write request on the same
 segment group.
 
-A small amount of meta-data is stored in the DS files.  In particular,
-each of these files keeps partial information of the mtime and file
-size of the inode.  The information is updated alongside with any
-write, checksum update or truncate operation, as described in the
-section about MS.
-
 Before moving on to the next section, we note that there are some
 interesting interaction between the file truncate operation (in FUSE,
 the setattr() method) and data write performed in parallel.  In our
@@ -455,23 +449,21 @@ sent to FCs so that they can invalidate their caches.
 
 When an FC gets the attributes of a file, it makes a request to the
 MS.  The MS maintains a record that the file might be cached in the
-FC.  This record is kept until the MS sends the invalidation FIM to
-the FC (or until some other events due to system errors).  A request
-is sent to MS if a read is performed and the client cache has been
-invalidated, so that invalidation FIMs are sent to the FC again.
+FC.  This record is kept until a timeout corresponding to the
+`drop_cache` value, or until the MS sends the invalidation FIM to the
+FC (or until some other events due to system errors).
 
-When an FC sends write requests of a file to the MS, it also updates
-the MS with the minimum file size and the new mtime.  Like the MS, the
+When an FC sends write requests of a file to the DS, it also updates
+the DS with the minimum file size and the new mtime.  Like the MS, the
 DS also maintains records about which FCs might be caching the file
 data.  Upon write requests, invalidation FIMs are sent to these FCs.
 
-The above does not provide even the open-close consistency guarantee:
-in the unlikely situation that the invalidations are delayed, an open
-call occurring after close() completes may still read old data.
-Eventually we plan to provide configuration options so that certain
-system calls (e.g., close, flush, flock, etc) will not return until
-all invalidation FIMs caused on the file are acknowledged, so that
-such guarantees can be provided.
+To provide open-close consistency, we need to guard against the
+following situations: the invalidations is in flight when an open call
+occurring after close() completes may still read old data.  We prevent
+this by delaying the return of the close, flush and flock system
+calls, until all previous writes to the inode have been acknowledged
+completely.
 
 Although it might be beneficial to FS performance, we do not plan to
 support write-back cache (i.e., write() returns before the data is
