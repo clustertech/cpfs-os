@@ -31,7 +31,6 @@
 #include "mock_actions.hpp"
 #include "op_completion_mock.hpp"
 #include "posix_fs_mock.hpp"
-#include "req_entry.hpp"
 #include "req_entry_mock.hpp"
 #include "req_tracker_mock.hpp"
 #include "shaped_sender.hpp"

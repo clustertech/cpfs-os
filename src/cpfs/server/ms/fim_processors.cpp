@@ -33,6 +33,7 @@
 #include "fims.hpp"
 #include "logger.hpp"
 #include "member_fim_processor.hpp"
+#include "mutex_util.hpp"
 #include "req_entry.hpp"
 #include "req_entry_impl.hpp"
 #include "req_tracker.hpp"
