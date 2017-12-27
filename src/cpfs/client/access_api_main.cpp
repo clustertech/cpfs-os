@@ -39,6 +39,7 @@
 #include "client/conn_mgr_impl.hpp"
 #include "client/fim_processors.hpp"
 #include "client/fs_common_lowlevel.hpp"
+#include "client/fs_common_lowlevel_impl.hpp"
 #include "client/inode_usage_impl.hpp"
 #include "client/shutdown_mgr_impl.hpp"
 
@@ -94,7 +95,7 @@ class APIClient : public BaseAPIClient {
     shutdown_mgr->SetAsioPolicy(asio_policy());
     set_status_dumper(MakeStatusDumper(this));
     status_dumper()->SetAsioPolicy(asio_policy());
-    set_fs_ll(new FSCommonLL);
+    set_fs_ll(MakeFSCommonLL());
     fs_ll()->SetClient(this);
     set_api_common(MakeAPICommon(fs_ll()));
     set_fs_async_rw(MakeAsyncRWExecutor(api_common()));

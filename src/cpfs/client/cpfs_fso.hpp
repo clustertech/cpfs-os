@@ -48,6 +48,7 @@
 #include "client/conn_mgr.hpp"
 #include "client/file_handle.hpp"
 #include "client/fs_common_lowlevel.hpp"
+#include "client/fs_common_lowlevel_impl.hpp"
 
 struct fuse_chan;
 
@@ -166,7 +167,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy> {
   explicit CpfsFuseObj(TFuseMethodPolicy fuse_method_policy
                        = TFuseMethodPolicy())
       : BaseFuseObj<TFuseMethodPolicy>(fuse_method_policy),
-        fs_ll_(new FSCommonLL) {}
+        fs_ll_(MakeFSCommonLL()) {}
 
   /**
    * Set the client object.

@@ -2,6 +2,12 @@
 
 /* Copyright 2015 ClusterTech Ltd */
 
+/**
+ * @file
+ *
+ * Define the VFS interface for common filesystem operations.
+ */
+
 #include <stdint.h>
 
 #include <sys/stat.h>
@@ -10,21 +16,13 @@
 #include <cstddef>
 #include <vector>
 
-#include <boost/shared_ptr.hpp>
-
-#include "common.hpp"
 #include "fim.hpp"
 
-/**
- * @file
- *
- * Define the VFS interface for common filesystem operations.
- */
+namespace boost { template <class Y> class shared_ptr; }
 
 namespace cpfs {
 
 class IReqEntry;
-class IReqTracker;
 
 namespace client {
 
@@ -305,202 +303,6 @@ class IFSCommonLL {
    * Fsync for an inode
    */
   virtual void Fsync(uint64_t inode) = 0;
-};
-
-/**
- * Base VFS interface for common filesystem operations.
- */
-class FSCommonLL : public IFSCommonLL {
- public:
-  /**
-   * Set the CPFS client object.
-   *
-   * @param client The client object
-   */
-  void SetClient(BaseFSClient* client);
-
-  /**
-   * Open the given inode
-   *
-   * @param identity The UID and GID
-   *
-   * @param inode The inode to open
-   *
-   * @param flags The POSIX flags to use
-   *
-   * @param ret The FSOpenReply returned
-   *
-   * @return True if successful, false otherwise
-   */
-  bool Open(const FSIdentity& identity,
-            uint64_t inode, int flags, FSOpenReply* ret);
-  /**
-   * Lookup the inode number from the specified name
-   *
-   * @param identity The UID and GID
-   *
-   * @param parent The inode of the parent directory
-   *
-   * @param name The name to lookup
-   *
-   * @param ret The FSLookupReply returned
-   *
-   * @return True if successful, false otherwise
-   */
-  bool Lookup(const FSIdentity& identity, uint64_t parent,
-              const char* name, FSLookupReply* ret);
-  /**
-   * Create a new inode
-   *
-   * @param identity The UID and GID
-   *
-   * @param parent The inode of the parent directory
-   *
-   * @param name The name to lookup
-   *
-   * @param mode The POSIX file mode
-   *
-   * @param flags The POSIX file creation flags
-   *
-   * @param ret The FSCreateReply returned
-   *
-   * @return True if successful, false otherwise
-   */
-  bool Create(const FSIdentity& identity, uint64_t parent, const char* name,
-              mode_t mode, int flags, FSCreateReply* ret);
-
-  /**
-   * Read data from an inode
-   *
-   * @param fh The file handle for reading
-   *
-   * @param inode The inode to read
-   *
-   * @param size The size of data to read
-   *
-   * @param off The offset
-   *
-   * @param ret Reply received for this request
-   *
-   * @return True if successful, false otherwise
-   */
-  bool Read(uint64_t fh, uint64_t inode, std::size_t size, off_t off,
-            FSReadReply* ret);
-
-  bool Readv(uint64_t fh, uint64_t inode, std::size_t size, off_t off,
-             FSReadvReply* ret);
-
-  /**
-   * Write data to an inode
-   *
-   * @param fh The file handle for writing
-   *
-   * @param inode The inode to read
-   *
-   * @param buf The buffer to received data
-   *
-   * @param size The size of data to read
-   *
-   * @param off The offset
-   *
-   * @param ret Reply received for this request
-   *
-   * @return True if successful, false otherwise
-   */
-  bool Write(uint64_t fh, uint64_t inode,
-             const char* buf, std::size_t size, off_t off,
-             FSWriteReply* ret);
-
-  /**
-   * Release the given inode
-   *
-   * @param inode The inode
-   *
-   * @param fh The file handle
-   *
-   * @param flags The POSIX flags
-   */
-  void Release(uint64_t inode, uint64_t* fh, int flags);
-
-  /**
-   * Getattr from an inode
-   *
-   * @param identity The UID and GID
-   *
-   * @param inode The inode to use
-   *
-   * @param ret Reply received for this request
-   *
-   * @return True if successful, false otherwise
-   */
-  bool Getattr(const FSIdentity& identity, uint64_t inode, FSGetattrReply* ret);
-
-  /**
-   * Setattr for an inode
-   *
-   * @param identity The UID and GID
-   *
-   * @param inode The inode to use
-   *
-   * @param attr The attr to set
-   *
-   * @param to_set The FUSE flag that specifies stat fields to set
-   *
-   * @param ret Reply received for this request
-   *
-   * @return True if successful, false otherwise
-   */
-  bool Setattr(const FSIdentity& identity, uint64_t inode,
-               const struct stat* attr, int to_set,
-               FSSetattrReply* ret);
-
-  /**
-   * Flush for an inode
-   */
-  void Flush(uint64_t inode);
-
-  /**
-   * Fsync for an inode
-   */
-  void Fsync(uint64_t inode);
-
- private:
-  BaseFSClient* client_;
-
-  /**
-   * Update an inode for an opened file, and update the MS about any
-   * status changes of the client about the inode.
-   *
-   * @param inode The inode
-   *
-   * @param is_write Whether a writable
-   */
-  void DoUpdateClosed(InodeNum inode, bool is_write);
-
-  /**
-   * Wait for all previous writes for the inode to have completed.
-   *
-   * @param ino The inode
-   */
-  void WaitWriteComplete(InodeNum ino);
-
-  /**
-   * Get the DSTracker
-   */
-  boost::shared_ptr<IReqTracker> GetDSTracker(
-      GroupId group, GroupRole role, GroupRole checksum);
-
-  /**
-   * Callback to use when reply is received for WriteFim the FC sent.
-   *
-   * @param entry The entry containing the WriteFim that the FC sent
-   *
-   * @param inode The inode number of the WriteFim
-   *
-   * @param fh The FUSE handle associated with the file being written
-   */
-  void WriteAckCallback(
-      const boost::shared_ptr<IReqEntry>& entry, InodeNum inode, uint64_t fh);
 };
 
 }  // namespace client
