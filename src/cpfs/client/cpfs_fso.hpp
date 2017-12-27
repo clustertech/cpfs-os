@@ -27,6 +27,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/bind.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
 
 #include "common.hpp"
@@ -157,22 +158,22 @@ inline int CpfsOptProc(void* data, const char* arg, int key,
  * interactions.
  */
 template <typename TFuseMethodPolicy = FuseMethodPolicy>
-class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
-                    public FSCommonLL {
+class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy> {
  public:
   /**
    * @param fuse_method_policy Fuse method policy object to use.
    */
   explicit CpfsFuseObj(TFuseMethodPolicy fuse_method_policy
                        = TFuseMethodPolicy())
-      : BaseFuseObj<TFuseMethodPolicy>(fuse_method_policy) {}
+      : BaseFuseObj<TFuseMethodPolicy>(fuse_method_policy),
+        fs_ll_(new FSCommonLL) {}
 
   /**
    * Set the client object.
    */
   void SetClient(BaseFSClient* client) {
     client_ = client;
-    FSCommonLL::SetClient(client);
+    fs_ll_->SetClient(client);
   }
 
   void ParseFsOpts(fuse_args* args) {
@@ -265,7 +266,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
     struct stat stbuf;
     FSGetattrReply ret;
     ret.stbuf = &stbuf;
-    if (!FSCommonLL::Getattr(GetFSIdentity(req), ino, &ret)) {
+    if (!fs_ll_->Getattr(GetFSIdentity(req), ino, &ret)) {
       return HandleUnexpectedReply(req, ino, ret.reply, "Getattr");
     }
     DEBUG_CPFS("Ret", "Getattr", ino);
@@ -281,7 +282,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
     (void) fi;
     DEBUG_CPFS("Run", "Setattr", ino);
     FSSetattrReply ret;
-    if (!FSCommonLL::Setattr(GetFSIdentity(req), ino, attr, to_set, &ret)) {
+    if (!fs_ll_->Setattr(GetFSIdentity(req), ino, attr, to_set, &ret)) {
       return HandleUnexpectedReply(req, ino, ret.reply, "Setattr");
     }
     DEBUG_CPFS("Ret", "Setattr", ino);
@@ -295,7 +296,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
   void Open(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi) {
     DEBUG_CPFS("Run", "Open", ino);
     FSOpenReply ret;
-    if (!FSCommonLL::Open(GetFSIdentity(req), ino, fi->flags, &ret)) {
+    if (!fs_ll_->Open(GetFSIdentity(req), ino, fi->flags, &ret)) {
       return HandleUnexpectedReply(req, ino, ret.reply, "Open");
     }
     DEBUG_CPFS("Ret", "Open", ino);
@@ -311,7 +312,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
               fuse_file_info* fi) {
     DEBUG_CPFS("Run", "Create", ino, ": ", name);
     FSCreateReply ret;
-    if (!FSCommonLL::Create(GetFSIdentity(req),
+    if (!fs_ll_->Create(GetFSIdentity(req),
                             ino, name, mode, fi->flags, &ret)) {
       return HandleUnexpectedReply(req, ino, ret.reply, "Create");
     }
@@ -330,7 +331,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
    * The FUSE flush method.
    */
   void Flush(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi) {
-    FSCommonLL::Flush(ino);
+    fs_ll_->Flush(ino);
     this->ReplyErr(req, FHGetErrno(fi->fh, false));
   }
 
@@ -338,7 +339,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
    * The FUSE release method.
    */
   void Release(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi) {
-    FSCommonLL::Release(ino, &fi->fh, fi->flags);
+    fs_ll_->Release(ino, &fi->fh, fi->flags);
     this->ReplyErr(req, 0);
   }
 
@@ -348,7 +349,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
   void Fsync(fuse_req_t req, fuse_ino_t ino, int datasync, fuse_file_info* fi) {
     (void) fi;
     (void) datasync;
-    FSCommonLL::Fsync(ino);
+    fs_ll_->Fsync(ino);
     this->ReplyErr(req, 0);
   }
 
@@ -436,7 +437,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
   void Lookup(fuse_req_t req, fuse_ino_t ino, const char* name) {
     DEBUG_CPFS("Run", "Lookup", ino, ": ", name);
     FSLookupReply ret;
-    if (!FSCommonLL::Lookup(GetFSIdentity(req), ino, name, &ret))
+    if (!fs_ll_->Lookup(GetFSIdentity(req), ino, name, &ret))
       return HandleUnexpectedReply(req, ino, ret.reply, "Lookup");
     DEBUG_CPFS("Ret", "Lookup", ino);
     fuse_entry_param entry_param;
@@ -500,7 +501,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
     (void) ino;  // Already in fi
     DEBUG_CPFS("Run", "Write", ino, ": ", PINT(size), ", ", PINT(off));
     FSWriteReply ret;
-    if (!FSCommonLL::Write(fi->fh, ino, buf, size, off, &ret)) {
+    if (!fs_ll_->Write(fi->fh, ino, buf, size, off, &ret)) {
       DEBUG_CPFS("Err", "Write", ino, " deferred ", PVal(ret.deferred_errno));
       this->ReplyErr(req, ret.deferred_errno);
       return;
@@ -517,7 +518,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
     (void) ino;  // Already in fi
     DEBUG_CPFS("Run", "Read", ino, ": ", PINT(size), ", ", PINT(off));
     FSReadvReply ret;
-    if (!FSCommonLL::Readv(fi->fh, ino, size, off, &ret))
+    if (!fs_ll_->Readv(fi->fh, ino, size, off, &ret))
       return HandleUnexpectedReply(req, ino, ret.replies.back(), "Read");
     DEBUG_CPFS("Ret", "Read", ino);
     this->ReplyIov(req, ret.iov.data(), ret.iov.size());
@@ -541,7 +542,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
       boost::unique_lock<MUTEX_TYPE> lock;
       entry = client_->tracker_mapper()->GetMSTracker()->
           AddRequest(rfim, &lock);
-      entry->OnAck(boost::bind(&FSCommonLL::CreateReplyCallback, this, _1));
+      entry->OnAck(boost::bind(&CreateReplyCallback, _1));
     }
     const FIM_PTR<IFim>& reply = entry->WaitReply();
     if (reply->type() != kAttrReplyFim)
@@ -572,7 +573,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
       boost::unique_lock<MUTEX_TYPE> lock;
       entry = client_->tracker_mapper()->GetMSTracker()->
           AddRequest(rfim, &lock);
-      entry->OnAck(boost::bind(&FSCommonLL::CreateReplyCallback, this, _1));
+      entry->OnAck(boost::bind(&CreateReplyCallback, _1));
     }
     const FIM_PTR<IFim>& reply = entry->WaitReply();
     if (reply->type() != kAttrReplyFim)
@@ -622,7 +623,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
       boost::unique_lock<MUTEX_TYPE> lock;
       entry = client_->tracker_mapper()->GetMSTracker()->
           AddRequest(rfim, &lock);
-      entry->OnAck(boost::bind(&FSCommonLL::CreateReplyCallback, this, _1));
+      entry->OnAck(boost::bind(&CreateReplyCallback, _1));
     }
     const FIM_PTR<IFim>& reply = entry->WaitReply();
     if (reply->type() != kAttrReplyFim)
@@ -826,7 +827,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy>,
   double heartbeat_interval_;
   double socket_read_timeout_;
   bool use_xattr_;
-
+  boost::scoped_ptr<IFSCommonLL> fs_ll_;
   /**
    * Common routine for handling unexpected replies.
    *

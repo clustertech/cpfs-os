@@ -116,6 +116,20 @@ struct FSSetattrReply {
 };
 
 /**
+ * Callback to run when a inode-creating request is replied.  This
+ * will do anything only if the reply is an AttrReply, and may perform
+ * two things:
+ *
+ * 1. Set the created inode number reply
+ *
+ * 2. Set the DS group list of the reply to the request.  The DS group
+ *    list is assumed to be the full of the tail buffer of the reply.
+ *
+ * @param ent The request entry
+ */
+void CreateReplyCallback(const boost::shared_ptr<IReqEntry>& ent);
+
+/**
  * Base VFS interface for common filesystem operations.
  */
 class IFSCommonLL {
@@ -449,20 +463,6 @@ class FSCommonLL : public IFSCommonLL {
    * Fsync for an inode
    */
   void Fsync(uint64_t inode);
-
-  /**
-   * Callback to run when a inode-creating request is replied.  This
-   * will do anything only if the reply is an AttrReply, and may perform
-   * two things:
-   *
-   * 1. Set the created inode number reply
-   *
-   * 2. Set the DS group list of the reply to the request.  The DS group
-   *    list is assumed to be the full of the tail buffer of the reply.
-   *
-   * @param ent The request entry
-   */
-  void CreateReplyCallback(const boost::shared_ptr<IReqEntry>& ent);
 
  private:
   BaseFSClient* client_;

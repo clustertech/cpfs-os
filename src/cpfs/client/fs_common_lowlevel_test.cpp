@@ -774,7 +774,7 @@ TEST_F(FSCommonLLTest, CreateReplyCallback) {
   EXPECT_CALL(*req_entry, request())
       .WillOnce(Return(mkdir_req_fim));
 
-  ll_->CreateReplyCallback(req_entry);
+  CreateReplyCallback(req_entry);
   EXPECT_EQ(42U, (*mkdir_req_fim)->req.new_inode);
   EXPECT_EQ(0U, mkdir_req_fim->tail_buf_size());
 
@@ -783,7 +783,7 @@ TEST_F(FSCommonLLTest, CreateReplyCallback) {
   EXPECT_CALL(*req_entry, request())
       .WillOnce(Return(symlink_req_fim));
 
-  ll_->CreateReplyCallback(req_entry);
+  CreateReplyCallback(req_entry);
   EXPECT_EQ(42U, (*symlink_req_fim)->new_inode);
   EXPECT_EQ(0U, symlink_req_fim->tail_buf_size());
 
@@ -792,7 +792,7 @@ TEST_F(FSCommonLLTest, CreateReplyCallback) {
   EXPECT_CALL(*req_entry, request())
       .WillOnce(Return(mknod_req_fim));
 
-  ll_->CreateReplyCallback(req_entry);
+  CreateReplyCallback(req_entry);
   EXPECT_EQ(42U, (*mknod_req_fim)->new_inode);
   EXPECT_EQ(1U, (*mknod_req_fim)->num_ds_groups);
   EXPECT_EQ(sizeof(GroupId), mknod_req_fim->tail_buf_size());
