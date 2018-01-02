@@ -29,6 +29,8 @@
 #include "shutdown_mgr.hpp"
 #include "status_dumper.hpp"
 #include "status_dumper_impl.hpp"
+#include "thread_fim_processor.hpp"
+#include "thread_fim_processor_impl.hpp"
 #include "tracker_mapper.hpp"
 #include "tracker_mapper_impl.hpp"
 #include "client/base_client.hpp"
@@ -80,10 +82,11 @@ class FSClient : public BaseFSClient {
         0,  // fuse_chan is set later
         new CacheInvPolicy<FuseMethodPolicy>(fso_.fuse_method_policy())));
     CompositeFimProcessor* ms_proc = new CompositeFimProcessor;
-    ms_proc->AddFimProcessor(new BaseFimProcessor);
     ms_proc->AddFimProcessor(MakeGenCtrlFimProcessor(this));
     ms_proc->AddFimProcessor(MakeMSCtrlFimProcessor(this));
-    set_ms_fim_processor(ms_proc);
+    IThreadFimProcessor* ms_proc_thread =
+        kBasicThreadFimProcessorMaker(ms_proc);
+    set_ms_fim_processor_thread(ms_proc_thread);
     CompositeFimProcessor* ds_proc = new CompositeFimProcessor;
     ds_proc->AddFimProcessor(new BaseFimProcessor);
     ds_proc->AddFimProcessor(MakeGenCtrlFimProcessor(this));
@@ -113,6 +116,8 @@ class FSClient : public BaseFSClient {
   }
 
   void Shutdown() {
+    ms_fim_processor_thread()->Stop();
+    ms_fim_processor_thread()->Join();
     this->BaseClient::Shutdown();
     tracker_mapper()->Reset();
     cache_mgr()->Shutdown();

@@ -21,6 +21,7 @@
 #include "service.hpp"
 #include "shutdown_mgr.hpp"
 #include "status_dumper.hpp"
+#include "thread_fim_processor.hpp"
 #include "tracker_mapper.hpp"
 #include "util.hpp"
 #include "client/api_common.hpp"
@@ -83,11 +84,24 @@ IConnector* BaseClient::connector() {
 }
 
 void BaseClient::set_ms_fim_processor(IFimProcessor* ms_fim_processor) {
+  ms_fim_processor_thread_.reset();
   ms_fim_processor_.reset(ms_fim_processor);
 }
 
 IFimProcessor* BaseClient::ms_fim_processor() {
-  return ms_fim_processor_.get();
+  if (ms_fim_processor_)
+    return ms_fim_processor_.get();
+  return ms_fim_processor_thread_.get();
+}
+
+void BaseClient::set_ms_fim_processor_thread(
+    IThreadFimProcessor* ms_fim_processor) {
+  ms_fim_processor_.reset();
+  ms_fim_processor_thread_.reset(ms_fim_processor);
+}
+
+IThreadFimProcessor* BaseClient::ms_fim_processor_thread() {
+  return ms_fim_processor_thread_.get();
 }
 
 void BaseClient::set_ds_fim_processor(IFimProcessor* ds_fim_processor) {

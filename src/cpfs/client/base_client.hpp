@@ -33,6 +33,7 @@ class IIOServiceRunner;
 class IAsioPolicy;
 class IOpCompletionCheckerSet;
 class IShutdownMgr;
+class IThreadFimProcessor;
 class ITrackerMapper;
 
 namespace client {
@@ -104,15 +105,26 @@ class BaseClient : public IService {
   IConnector* connector();
 
   /**
-   * Set the Fim processor handling MS Fims.
+   * Set the Fim processor handling MS Fims, if it is a non-thread fim processor.
    *
    * @param ms_fim_processor The Fim processor
    */
   void set_ms_fim_processor(IFimProcessor* ms_fim_processor);
   /**
-   * @return The Fim processor handling MS Fims
+   * @return The Fim processor handling MS Fims (whether threaded or not)
    */
   IFimProcessor* ms_fim_processor();
+
+  /**
+   * Set the Fim processor handling MS Fims, if it is a thread fim processor.
+   *
+   * @param ms_fim_processor The Fim processor
+   */
+  void set_ms_fim_processor_thread(IThreadFimProcessor* ms_fim_processor);
+  /**
+   * @return The Fim processor handling MS Fims, if it is a thread fim processor.
+   */
+  IThreadFimProcessor* ms_fim_processor_thread();
 
   /**
    * Set the Fim processor handling DS Fims.
@@ -203,7 +215,10 @@ class BaseClient : public IService {
   // Connection
   boost::scoped_ptr<ITrackerMapper> tracker_mapper_; /**< Find connection */
   boost::scoped_ptr<IConnector> connector_; /**< Make connections */
-  boost::scoped_ptr<IFimProcessor> ms_fim_processor_; /**< MS handler */
+  /** MS handler if thread is not used */
+  boost::scoped_ptr<IFimProcessor> ms_fim_processor_;
+  /** MS handler if thread is used */
+  boost::scoped_ptr<IThreadFimProcessor> ms_fim_processor_thread_;
   boost::scoped_ptr<IFimProcessor> ds_fim_processor_; /**< DS handler */
   boost::scoped_ptr<IConnMgr> conn_mgr_; /**< Connect servers */
 

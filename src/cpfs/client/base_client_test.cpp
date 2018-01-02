@@ -11,6 +11,7 @@
 #include "io_service_runner_mock.hpp"
 #include "mock_actions.hpp"
 #include "service_mock.hpp"
+#include "thread_fim_processor_mock.hpp"
 #include "tracker_mapper_mock.hpp"
 
 namespace cpfs {
@@ -32,7 +33,16 @@ TEST(BaseClientTest, GetSet) {
   EXPECT_EQ(0, client.connector());
   client.set_connector(0);
   EXPECT_EQ(0, client.ms_fim_processor());
+  MockIThreadFimProcessor* ms_fim_proc = new MockIThreadFimProcessor;
+  client.set_ms_fim_processor(ms_fim_proc);
+  EXPECT_EQ(ms_fim_proc, client.ms_fim_processor());
+  EXPECT_EQ(0, client.ms_fim_processor_thread());
   client.set_ms_fim_processor(0);
+  EXPECT_EQ(0, client.ms_fim_processor_thread());
+  ms_fim_proc = new MockIThreadFimProcessor;
+  client.set_ms_fim_processor_thread(ms_fim_proc);
+  EXPECT_EQ(ms_fim_proc, client.ms_fim_processor());
+  EXPECT_EQ(ms_fim_proc, client.ms_fim_processor_thread());
   EXPECT_EQ(0, client.ds_fim_processor());
   client.set_ds_fim_processor(0);
   EXPECT_EQ(0, client.conn_mgr());

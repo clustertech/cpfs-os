@@ -41,6 +41,7 @@
 #include "mutex_util.hpp"
 #include "req_entry.hpp"
 #include "req_tracker.hpp"
+#include "thread_fim_processor.hpp"
 #include "tracker_mapper.hpp"
 #include "version.hpp"
 #include "client/base_client.hpp"
@@ -257,6 +258,7 @@ class CpfsFuseObj : public BaseFuseObj<TFuseMethodPolicy> {
     client_->connector()->set_socket_read_timeout(socket_read_timeout_);
     client_->conn_mgr()->Init(meta_servers_);
     client_->service_runner()->Run();
+    client_->ms_fim_processor_thread()->Start();
   }
 
   /**

@@ -34,6 +34,7 @@
 #include "req_entry_mock.hpp"
 #include "req_limiter_mock.hpp"
 #include "req_tracker_mock.hpp"
+#include "thread_fim_processor_mock.hpp"
 #include "tracker_mapper_mock.hpp"
 #include "client/base_client.hpp"
 #include "client/cache_mock.hpp"
@@ -120,6 +121,7 @@ class CpfsFsoTest : public ::testing::Test {
   MockICacheMgr* mock_cache_mgr_;
   MockIConnMgr* mock_conn_mgr_;
   MockIOServiceRunner* mock_io_service_runner_;
+  MockIThreadFimProcessor* ms_thread_fim_processor_;
   MockIInodeUsageSet* inode_usage_set_;
   MockIOpCompletionCheckerSet* op_completion_checker_set_;
   MockIConnector* connector_;
@@ -168,6 +170,8 @@ class CpfsFsoTest : public ::testing::Test {
     client_.set_op_completion_checker_set(
         op_completion_checker_set_ = new MockIOpCompletionCheckerSet);
     client_.set_connector(connector_ = new MockIConnector);
+    client_.set_ms_fim_processor_thread(
+        ms_thread_fim_processor_ = new MockIThreadFimProcessor);
     client_.set_dsg_state(0, kDSGReady, 0);
     client_.set_dsg_state(7, kDSGReady, 0);
   }
@@ -333,6 +337,7 @@ TEST_F(CpfsFsoTest, Init) {
   EXPECT_CALL(*connector_, set_socket_read_timeout(_));
   EXPECT_CALL(*mock_conn_mgr_, Init(_));
   EXPECT_CALL(*mock_io_service_runner_, Run());
+  EXPECT_CALL(*ms_thread_fim_processor_, Start());
   // In real usage, the fuse_chan is obtained by fuse_mount()
   cpfs_fuse_obj_.SetFuseChannel(0);
   cpfs_fuse_obj_.Init(0);
