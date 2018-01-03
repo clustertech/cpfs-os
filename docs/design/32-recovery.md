@@ -529,6 +529,17 @@ to terminate their loops sending resynchronization data.  The MS sets
 the DSG state to ready, and broadcast the information to the DSG and
 the standby MS.
 
+During data resync, the FC may access data in the DSs, treating the
+DSG as still degraded.  If it accesses data of an inode which has
+already completed data resync, the DS asks the FC to resend the
+request to the recovered DS instead.  The exception is when the FC
+receives notification from MS that the DS data resync is fully
+complete, and the DSG is to become active again.  At this point, the
+FC stops sending reads and writes to DSs of the DSG, until all
+previously started operations have completed.  This prevents access
+reordering when the access path is shortened (the DSs no longer needs
+to redirect FCs to the recovered DS).
+
 ## Disk full ##
 
 We make the following assumptions about disk full conditions:
