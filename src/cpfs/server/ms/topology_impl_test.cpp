@@ -675,6 +675,12 @@ TEST_F(TopologyTest, SetDSGState) {
   EXPECT_EQ(kDSGDegraded, topology_mgr_->GetDSGState(0, &failed));
   EXPECT_TRUE(topology_mgr_->DSGReady(0));
   EXPECT_EQ(GroupRole(2), failed);
+
+  // After setting to kDSGShuttingDown, Remove will not change it
+  topology_mgr_->SetDSGState(0, 2, kDSGShuttingDown, 2);
+  bool state_changed;
+  topology_mgr_->RemoveDS(0, 0, &state_changed);
+  EXPECT_FALSE(state_changed);
 }
 
 TEST_F(TopologyTest, AckDSShutdown) {

@@ -177,6 +177,8 @@ struct DSGroup {
   DSGroupState NextState(bool lenient_open, GroupRole* failed_ret) {
     int num_open = 0, num_missing = 0;
     *failed_ret = kNumDSPerGroup;
+    if (state == kDSGShuttingDown)
+      return state;  // Don't move out of kDSGShuttingDown
     for (GroupRole r = 0; r < kNumDSPerGroup; ++r) {
       if (ds_infos[r].ip == 0) {
         ++num_open;
@@ -196,6 +198,14 @@ struct DSGroup {
     return state == kDSGReady || *failed_ret == failed ?
         kDSGDegraded : kDSGFailed;
   }
+};
+
+/**
+ * Record DSG state changes pending announcement
+ */
+struct DSGStateChange {
+  uint64_t id;  /**< Change pending for FC announcement */
+  std::set<GroupRole> acked_ds;  /**< DS acknowledged state change */
 };
 
 /**
@@ -258,9 +268,10 @@ class TopologyMgr : public ITopologyMgr {
   typedef std::map<ClientNum, NodeInfo> FCInfoMap;
   FCInfoMap fc_infos_; /**< The FC IP addresses */
   ClientNum next_fc_id_; /**< The next FC id to allocate */
-  uint64_t pending_state_change_id_; /**< Change pending for FC announcement */
+  /** State changes awaiting completion */
+  typedef std::map<GroupId, DSGStateChange> DSGStateChangeMap;
+  DSGStateChangeMap pending_dscs_;
   GroupId max_group_id_; /**< The max ID of the group created successfully */
-  std::set<GroupRole> acked_ds_; /**< DS acknowledged state change */
   /** Map the role (e.g. MS1, DS 0-1) to UUID */
   std::map<std::string, std::string> node_uuids_;
 
@@ -315,7 +326,7 @@ class TopologyMgr : public ITopologyMgr {
 
 TopologyMgr::TopologyMgr(BaseMetaServer* server)
     : server_(server), data_mutex_(MUTEX_INIT),
-      next_fc_id_(0), pending_state_change_id_(0), max_group_id_(0) {}
+      next_fc_id_(0), max_group_id_(0) {}
 
 void TopologyMgr::Init() {
   max_group_id_ = boost::lexical_cast<GroupId>(
@@ -624,8 +635,8 @@ void TopologyMgr::AnnounceDSGState_(GroupId group, GroupRole except) {
   FIM_PTR<IFim> state_change_fim = StateChangeFim_(group);
   Replicate_(state_change_fim);
   server_->tracker_mapper()->DSGBroadcast(group, state_change_fim, except);
-  pending_state_change_id_ = dsg.state_change_id;
-  acked_ds_.clear();
+  pending_dscs_[group].id = dsg.state_change_id;
+  pending_dscs_[group].acked_ds.clear();
 }
 
 bool TopologyMgr::AckDSGStateChange(uint64_t state_change_id,
@@ -634,8 +645,6 @@ bool TopologyMgr::AckDSGStateChange(uint64_t state_change_id,
                                     DSGroupState* state_ret) {
   MUTEX_LOCK_GUARD(data_mutex_);
   *state_ret = kDSGOutdated;
-  if (pending_state_change_id_ != state_change_id)
-    return false;
   GroupRole role;
   ITrackerMapper* tracker_mapper = server_->tracker_mapper();
   if (!tracker_mapper->FindDSRole(peer, group_ret, &role)) {
@@ -643,15 +652,21 @@ bool TopologyMgr::AckDSGStateChange(uint64_t state_change_id,
         "Ignoring a DSG state change ack: DS group role not found");
     return false;
   }
+  DSGStateChangeMap::iterator dsc_it = pending_dscs_.find(*group_ret);
+  if (dsc_it == pending_dscs_.end() || dsc_it->second.id != state_change_id)
+    return false;
+  DSGStateChange& dsc = dsc_it->second;
   DSGroup& dsg = ds_groups_[*group_ret];
   *state_ret = dsg.state;
-  if (acked_ds_.find(role) != acked_ds_.end())  // Defensive, shouldn't happen
+  if (dsc.acked_ds.find(role)
+      != dsc.acked_ds.end())  // Defensive, shouldn't happen
     return false;
-  acked_ds_.insert(role);
+  dsc.acked_ds.insert(role);
   for (GroupRole r = 0; r < kNumDSPerGroup; ++r)
-    if (acked_ds_.find(r) == acked_ds_.end()
+    if (dsc.acked_ds.find(r) == dsc.acked_ds.end()
         && tracker_mapper->GetDSFimSocket(*group_ret, r))
       return false;
+  pending_dscs_.erase(dsc_it);
   tracker_mapper->FCBroadcast(StateChangeFim_(*group_ret));
   return true;
 }
@@ -832,9 +847,11 @@ void TopologyMgr::AnnounceShutdown() {
   // All FC
   mapper->FCBroadcast(fim);
   // All DS announcing by state change
-  acked_ds_.clear();
+  pending_dscs_.clear();
   for (GroupId g = 0; g < ds_groups_.size(); ++g) {
     ds_groups_[g].state = kDSGShuttingDown;
+    pending_dscs_[g].id = ++ds_groups_[g].state_change_id;
+    pending_dscs_[g].acked_ds.clear();
     mapper->DSGBroadcast(g, StateChangeFim_(g), kNumDSPerGroup);
   }
 }
