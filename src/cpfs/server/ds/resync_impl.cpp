@@ -747,6 +747,7 @@ class ResyncFimProcessor
   }
 
   void DSResyncPhaseInodeListReplied() {
+    MUTEX_LOCK_GUARD(data_mutex_);
     if (enabled_) {
       ms_ready_ = true;
       NotifyIfPhaseReady();
