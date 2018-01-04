@@ -158,6 +158,22 @@ TEST_F(MSAdminFimProcessorTest, StatFSError) {
   EXPECT_EQ(1U, rresult->err_no);
 }
 
+TEST_F(MSAdminFimProcessorTest, DSGStateChangeReady) {
+  boost::shared_ptr<MockIFimSocket> fim_socket =
+      boost::make_shared<MockIFimSocket>();
+  FIM_PTR<DSGStateChangeReadyFim> req_fim = DSGStateChangeReadyFim::MakePtr();
+  req_fim->set_req_id(1);
+
+  MockIReqTracker tracker;
+  EXPECT_CALL(*fim_socket, GetReqTracker())
+      .WillRepeatedly(Return(&tracker));
+  EXPECT_CALL(tracker, peer_client_num())
+      .WillRepeatedly(Return(42));
+  EXPECT_CALL(*topology_, AckDSGStateChangeWait(42));
+
+  proc_->Process(req_fim, fim_socket);
+}
+
 TEST_F(MSAdminFimProcessorTest, ClusterStatus) {
   std::vector<NodeInfo> fc_infos(1);
   fc_infos[0].ip = 3;

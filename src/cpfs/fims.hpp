@@ -663,6 +663,19 @@ DEFINE_FIM_CLASS_STRUCT(512, DSGDistressModeChangeFim, 0) {
 };
 
 /**
+ * Fim part for MS to ask FCs to start / stop waiting for DSG topology changes.
+ */
+DEFINE_FIM_CLASS_STRUCT(513, DSGStateChangeWaitFim, 0) {
+  uint8_t enable; /**< If 1, prepare for state change */
+  FIM_STRUCT_END(513, DSGStateChangeWaitFim, 0);
+};
+
+/**
+ * Fim part for FC to tell MS that it is prepared for DSG topology changes.
+ */
+DEFINE_FIM_CLASS_VOID(514, DSGStateChangeReadyFim, 0);
+
+/**
  * Fim part for MS to notify system state change to FC.
  */
 DEFINE_FIM_CLASS_STRUCT(520, SysStateNotifyFim, 0) {

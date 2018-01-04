@@ -19,7 +19,9 @@
 #include <utility>
 #include <vector>
 
+#include <boost/atomic.hpp>
 #include <boost/bind.hpp>
+#include <boost/foreach.hpp>
 #include <boost/format.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/shared_ptr.hpp>
@@ -206,6 +208,9 @@ struct DSGroup {
 struct DSGStateChange {
   uint64_t id;  /**< Change pending for FC announcement */
   std::set<GroupRole> acked_ds;  /**< DS acknowledged state change */
+  DSGroupState state; /**< The new state */
+  GroupRole except; /**< The role which needs not be sent announcement */
+  bool ds_notified;  /**< The change has been sent to DSs */
 };
 
 /**
@@ -236,6 +241,7 @@ class TopologyMgr : public ITopologyMgr {
   void AnnounceDS(GroupId group, GroupRole role, bool is_added,
                   bool state_changed);
   void AnnounceDSGState(GroupId group);
+  void AckDSGStateChangeWait(ClientNum client);
   bool AckDSGStateChange(uint64_t state_change_id,
                          boost::shared_ptr<IFimSocket> peer,
                          GroupId* group_ret,
@@ -268,6 +274,10 @@ class TopologyMgr : public ITopologyMgr {
   typedef std::map<ClientNum, NodeInfo> FCInfoMap;
   FCInfoMap fc_infos_; /**< The FC IP addresses */
   ClientNum next_fc_id_; /**< The next FC id to allocate */
+  /** Whether DSG state change is in progress */
+  boost::atomic<bool> dsc_in_progress_;
+  /** FCs to reply before DSG state change */
+  std::set<ClientNum> dsc_pending_fcs_;
   /** State changes awaiting completion */
   typedef std::map<GroupId, DSGStateChange> DSGStateChangeMap;
   DSGStateChangeMap pending_dscs_;
@@ -288,8 +298,7 @@ class TopologyMgr : public ITopologyMgr {
   }
 
   FIM_PTR<DSGStateChangeFim> StateChangeFim_(GroupId group) {
-    FIM_PTR<DSGStateChangeFim> ret =
-        DSGStateChangeFim::MakePtr();
+    FIM_PTR<DSGStateChangeFim> ret = DSGStateChangeFim::MakePtr();
     (*ret)->ds_group = group;
     DSGroup& dsg = ds_groups_[group];
     (*ret)->state_change_id = dsg.state_change_id;
@@ -318,6 +327,8 @@ class TopologyMgr : public ITopologyMgr {
 
   bool AllDSReady_();
   void AnnounceDSGState_(GroupId group, GroupRole except = kNumDSPerGroup);
+  void SetFCsDSCFrozen_(bool enable);
+  void NotifyDSDSCs_();
   bool MSActive_();
   void HandleNewStat(const AllDSSpaceStat& stat);
   void AddUUID_(const std::string& uuid, const std::string& role);
@@ -326,7 +337,7 @@ class TopologyMgr : public ITopologyMgr {
 
 TopologyMgr::TopologyMgr(BaseMetaServer* server)
     : server_(server), data_mutex_(MUTEX_INIT),
-      next_fc_id_(0), max_group_id_(0) {}
+      next_fc_id_(0), dsc_in_progress_(false), max_group_id_(0) {}
 
 void TopologyMgr::Init() {
   max_group_id_ = boost::lexical_cast<GroupId>(
@@ -629,14 +640,74 @@ void TopologyMgr::AnnounceDSGState(GroupId group) {
 }
 
 void TopologyMgr::AnnounceDSGState_(GroupId group, GroupRole except) {
+  // Create a DSC, and do one of the followings:
+  //  * Wait, if DSC in progress and freezing FCs; otherwise
+  //  * Announce to DSs, if (a) DSC in progress, or (b) no DSC in
+  //    progress and (i) state is not changed to ready or (ii) there
+  //    is no FC
+  //  * Start FC wait, if otherwise
+  ITrackerMapper* tracker_mapper = server_->tracker_mapper();
   DSGroup& dsg = ds_groups_[group];
-  LOG(notice, Server, "DSG state change: group ", PINT(group),
-      " is now of state: ", ToStr(dsg.state));
-  FIM_PTR<IFim> state_change_fim = StateChangeFim_(group);
-  Replicate_(state_change_fim);
-  server_->tracker_mapper()->DSGBroadcast(group, state_change_fim, except);
   pending_dscs_[group].id = dsg.state_change_id;
   pending_dscs_[group].acked_ds.clear();
+  pending_dscs_[group].state = dsg.state;
+  pending_dscs_[group].except = except;
+  pending_dscs_[group].ds_notified = false;
+  LOG(notice, Server, "DSG state change: group ", PINT(group),
+      " to be changed to state: ", ToStr(dsg.state));
+  if (dsc_in_progress_) {
+    if (dsc_pending_fcs_.size() == 0)
+      NotifyDSDSCs_();  // Announce to DS
+    return;
+  }
+  dsc_pending_fcs_.clear();  // Just to be sure
+  if (dsg.state == kDSGReady) {
+    BOOST_FOREACH(const FCInfoMap::const_iterator::value_type& p, fc_infos_) {
+      if (tracker_mapper->GetFCFimSocket(p.first))
+        dsc_pending_fcs_.insert(p.first);
+    }
+  }
+  if (dsc_pending_fcs_.size() == 0) {
+    NotifyDSDSCs_();
+  } else {
+    LOG(notice, Server, "Setting FCs to wait for DSG state change");
+    dsc_in_progress_ = true;
+    SetFCsDSCFrozen_(true);
+  }
+}
+
+void TopologyMgr::SetFCsDSCFrozen_(bool enable) {
+  ITrackerMapper* tracker_mapper = server_->tracker_mapper();
+  FIM_PTR<DSGStateChangeWaitFim> fim = DSGStateChangeWaitFim::MakePtr();
+  (*fim)->enable = enable;
+  tracker_mapper->FCBroadcast(fim);
+}
+
+void TopologyMgr::AckDSGStateChangeWait(ClientNum client) {
+  MUTEX_LOCK_GUARD(data_mutex_);
+  if (dsc_pending_fcs_.find(client) == dsc_pending_fcs_.end())
+    return;
+  dsc_pending_fcs_.erase(client);
+  if (dsc_pending_fcs_.size() == 0)
+    NotifyDSDSCs_();
+}
+
+void TopologyMgr::NotifyDSDSCs_() {
+  BOOST_FOREACH(DSGStateChangeMap::iterator::value_type&
+                p,
+                pending_dscs_) {
+    GroupId group = p.first;
+    DSGStateChange& dsc = p.second;
+    if (dsc.ds_notified)
+      continue;
+    LOG(notice, Server, "Sending DSG state change to DSs: group ", PINT(group),
+        " state: ", ToStr(dsc.state));
+    FIM_PTR<IFim> state_change_fim = StateChangeFim_(group);
+    Replicate_(state_change_fim);
+    server_->tracker_mapper()->DSGBroadcast(
+        group, state_change_fim, dsc.except);
+    dsc.ds_notified = true;
+  }
 }
 
 bool TopologyMgr::AckDSGStateChange(uint64_t state_change_id,
@@ -658,8 +729,7 @@ bool TopologyMgr::AckDSGStateChange(uint64_t state_change_id,
   DSGStateChange& dsc = dsc_it->second;
   DSGroup& dsg = ds_groups_[*group_ret];
   *state_ret = dsg.state;
-  if (dsc.acked_ds.find(role)
-      != dsc.acked_ds.end())  // Defensive, shouldn't happen
+  if (dsc.acked_ds.find(role) != dsc.acked_ds.end())  // Defensive
     return false;
   dsc.acked_ds.insert(role);
   for (GroupRole r = 0; r < kNumDSPerGroup; ++r)
@@ -668,6 +738,11 @@ bool TopologyMgr::AckDSGStateChange(uint64_t state_change_id,
       return false;
   pending_dscs_.erase(dsc_it);
   tracker_mapper->FCBroadcast(StateChangeFim_(*group_ret));
+  if (dsc_in_progress_ && pending_dscs_.size() == 0) {
+    dsc_in_progress_ = false;
+    LOG(notice, Server, "Setting FCs to resume after DSG state change");
+    SetFCsDSCFrozen_(false);
+  }
   return true;
 }
 
@@ -847,13 +922,16 @@ void TopologyMgr::AnnounceShutdown() {
   // All FC
   mapper->FCBroadcast(fim);
   // All DS announcing by state change
-  pending_dscs_.clear();
   for (GroupId g = 0; g < ds_groups_.size(); ++g) {
     ds_groups_[g].state = kDSGShuttingDown;
     pending_dscs_[g].id = ++ds_groups_[g].state_change_id;
     pending_dscs_[g].acked_ds.clear();
-    mapper->DSGBroadcast(g, StateChangeFim_(g), kNumDSPerGroup);
+    pending_dscs_[g].state = kDSGShuttingDown;
+    pending_dscs_[g].except = kNumDSPerGroup;
+    pending_dscs_[g].ds_notified = false;
   }
+  dsc_in_progress_ = false;
+  NotifyDSDSCs_();
 }
 
 void TopologyMgr::AnnounceHalt() {

@@ -104,6 +104,18 @@ TEST_F(ClientFimProcessorTest, MSProcRegRejected) {
   ms_proc_->Process(MSRegRejectedFim::MakePtr(), socket);
 }
 
+TEST_F(ClientFimProcessorTest, DSGStateChangeWait) {
+  boost::shared_ptr<MockIFimSocket> socket(new MockIFimSocket);
+  FIM_PTR<IFim> response;
+  EXPECT_CALL(*socket, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&response));
+
+  FIM_PTR<DSGStateChangeWaitFim> fim = DSGStateChangeWaitFim::MakePtr();
+  (*fim)->enable = true;
+  ms_proc_->Process(fim, socket);
+  EXPECT_EQ(kDSGStateChangeReadyFim, response->type());
+}
+
 TEST_F(ClientFimProcessorTest, MSProcDSJoined) {
   boost::shared_ptr<IFimSocket> socket(new MockIFimSocket);
   EXPECT_CALL(*conn_mgr_, ConnectDS(12345678, 12345, 2, 3));

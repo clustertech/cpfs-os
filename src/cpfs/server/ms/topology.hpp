@@ -212,6 +212,11 @@ class ITopologyMgr {
   virtual void AnnounceDSGState(GroupId group) = 0;
 
   /**
+   * Handle acknowledgement of reception of DSGStateChangeWait Fim.
+   */
+  virtual void AckDSGStateChangeWait(ClientNum client) = 0;
+
+  /**
    * Handle acknowledgement of reception of state change Fim.
    *
    * @param state_change_id The state change id handled

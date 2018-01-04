@@ -345,8 +345,11 @@ IService* BuildMetaServer(const ConfigMgr& configs) {
   cleaner->SetPeriodicTimerMaker(kPeriodicTimerMaker);
   cleaner->Init();
   server::IWorker* failover_worker = BuildMSWorker(ret.get());
+  CompositeFimProcessor* failover_proc = new CompositeFimProcessor;
+  failover_proc->AddFimProcessor(server::ms::MakeAdminFimProcessor(ret.get()));
+  failover_proc->AddFimProcessor(failover_worker);
   IThreadFimProcessor* failover_thread =
-      kBasicThreadFimProcessorMaker(failover_worker);
+      kBasicThreadFimProcessorMaker(failover_proc);
   failover_worker->SetQueuer(failover_thread);
   ret->set_failover_processor(failover_thread);
   server::IThreadGroup* thread_group = server::MakeThreadGroup();

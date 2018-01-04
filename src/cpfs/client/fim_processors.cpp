@@ -44,6 +44,7 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
   explicit MSCtrlFimProcessor(BaseFSClient* client)
       : client_(client), ready_seen_(false) {
     AddHandler(&MSCtrlFimProcessor::HandleFCMSRegSuccess);
+    AddHandler(&MSCtrlFimProcessor::HandleDSGStateChangeWait);
     AddHandler(&MSCtrlFimProcessor::HandleTopologyChange);
     AddHandler(&MSCtrlFimProcessor::HandleMSRegRejected);
     AddHandler(&MSCtrlFimProcessor::HandleDSGStateChange);
@@ -75,6 +76,13 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
         "Connection to MS ", PVal(socket), " is rejected");
     socket->Shutdown();
     client_->conn_mgr()->ForgetMS(socket, true);
+    return true;
+  }
+
+  bool HandleDSGStateChangeWait(const FIM_PTR<DSGStateChangeWaitFim>& fim,
+                                const boost::shared_ptr<IFimSocket>& socket) {
+    if ((*fim)->enable)
+      socket->WriteMsg(DSGStateChangeReadyFim::MakePtr());
     return true;
   }
 

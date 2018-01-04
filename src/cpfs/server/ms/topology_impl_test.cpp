@@ -58,7 +58,7 @@ class TopologyTest : public ::testing::Test {
   boost::scoped_ptr<ITopologyMgr> topology_mgr_;
   MockITrackerMapper* tracker_mapper_;
   boost::shared_ptr<MockIFimSocket> ms_fim_socket_;
-  boost::shared_ptr<MockIFimSocket> ds_fim_socket_[kNumDSPerGroup];
+  boost::shared_ptr<MockIFimSocket> ds_fim_socket_[kNumDSPerGroup * 2];
   boost::shared_ptr<MockIFimSocket> fc_fim_socket_;
   MockIStateMgr* state_mgr_;
   MockIThreadGroup* thread_group_;
@@ -80,7 +80,7 @@ class TopologyTest : public ::testing::Test {
         ms_fim_socket_(new MockIFimSocket),
         fc_fim_socket_(new MockIFimSocket) {
     server_.set_tracker_mapper(tracker_mapper_ = new MockITrackerMapper);
-    for (GroupRole i = 0; i < kNumDSPerGroup; ++i)
+    for (GroupRole i = 0; i < 2 * kNumDSPerGroup; ++i)
       ds_fim_socket_[i] = boost::make_shared<MockIFimSocket>();
     server_.set_state_mgr(state_mgr_ = new MockIStateMgr);
     server_.set_thread_group(thread_group_ = new MockIThreadGroup);
@@ -104,13 +104,18 @@ class TopologyTest : public ::testing::Test {
     topology_mgr_->Init();
   }
 
-  void PrepareDSG(GroupId group, GroupRole numRole) {
+  ~TopologyTest() {
+    Mock::VerifyAndClear(tracker_mapper_);
+  }
+
+  void PrepareDSG(GroupId group, GroupRole numRole, GroupId goffset = 0) {
     for (GroupRole r = 0; r < kNumDSPerGroup; ++r) {
       if (r < numRole) {
         EXPECT_CALL(*tracker_mapper_, GetDSFimSocket(group, r))
-            .WillRepeatedly(Return(ds_fim_socket_[r]));
+            .WillRepeatedly(Return(ds_fim_socket_[r + goffset]));
         EXPECT_CALL(*tracker_mapper_, FindDSRole(
-            boost::static_pointer_cast<IFimSocket>(ds_fim_socket_[r]), _, _))
+            boost::static_pointer_cast<IFimSocket>(
+                ds_fim_socket_[r + goffset]), _, _))
             .WillRepeatedly(DoAll(SetArgPointee<1>(group),
                                   SetArgPointee<2>(r),
                                   Return(true)));
@@ -118,14 +123,27 @@ class TopologyTest : public ::testing::Test {
         EXPECT_CALL(*tracker_mapper_, GetDSFimSocket(group, r))
             .WillRepeatedly(Return(boost::shared_ptr<IFimSocket>()));
         EXPECT_CALL(*tracker_mapper_, FindDSRole(
-            boost::static_pointer_cast<IFimSocket>(ds_fim_socket_[r]), _, _))
+            boost::static_pointer_cast<IFimSocket>(
+                ds_fim_socket_[r + goffset]), _, _))
             .WillRepeatedly(Return(false));
       }
     }
   }
 
-  ~TopologyTest() {
-    Mock::VerifyAndClear(tracker_mapper_);
+  void PrepareDSGFull(GroupId group, GroupId goffset = 0) {
+    PrepareDSG(group, kNumDSPerGroup, goffset);
+    NodeInfo ni;
+    ni.pid = 0;
+    std::string s = "aec345-cd34-cdce-b442-eb5599996010";
+    for (GroupRole r = 0; r < kNumDSPerGroup; ++r) {
+      ni.ip = ni.port = 1;
+      s[s.length() - 2] = char(group + '0');
+      s[s.length() - 1] = char(r + '0');
+      ni.SetUUID(s.c_str());
+      bool state_changed;
+      EXPECT_TRUE(topology_mgr_->AddDS(group, r, ni, false, &state_changed));
+      EXPECT_EQ(r == kNumDSPerGroup - 1, state_changed);
+    }
   }
 };
 
@@ -371,6 +389,181 @@ TEST_F(TopologyTest, AnnounceDSJoin) {
   EXPECT_EQ(0, std::memcmp(tcfim0.msg(), tcfim1.msg(), tcfim0.len()));
   TopologyChangeFim& tcfim2 = dynamic_cast<TopologyChangeFim&>(*fc_fim);
   EXPECT_EQ(0, std::memcmp(tcfim0.msg(), tcfim2.msg(), tcfim0.len()));
+}
+
+TEST_F(TopologyTest, AnnounceDSGReadyNoFC) {
+  PrepareDSGFull(0);
+
+  EXPECT_CALL(*tracker_mapper_, GetMSFimSocket())
+      .WillRepeatedly(Return(ms_fim_socket_));
+  FIM_PTR<IFim> ms_fim1, ms_fim2, ds_fim1, ds_fim2, fc_fim;
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&ms_fim1))
+      .WillOnce(SaveArg<0>(&ms_fim2));
+  EXPECT_CALL(*tracker_mapper_, DSGBroadcast(0, _, _))
+      .WillOnce(SaveArg<1>(&ds_fim1))
+      .WillOnce(SaveArg<1>(&ds_fim2));
+  EXPECT_CALL(*tracker_mapper_, FCBroadcast(_))
+      .WillOnce(SaveArg<0>(&fc_fim));
+
+  topology_mgr_->AnnounceDS(0, 0, true, true);
+  EXPECT_EQ(kTopologyChangeFim, ms_fim1->type());
+  EXPECT_EQ(kTopologyChangeFim, ds_fim1->type());
+  EXPECT_EQ(kTopologyChangeFim, fc_fim->type());
+  EXPECT_EQ(kDSGStateChangeFim, ms_fim2->type());
+  EXPECT_EQ(kDSGStateChangeFim, ds_fim2->type());
+}
+
+TEST_F(TopologyTest, AnnounceDSGReadyTwiceWithFC) {
+  FIM_PTR<IFim> ms_fim1, ms_fim2, ds_fim1, ds_fim2, fc_fim1, fc_fim2;
+  PrepareDSGFull(0);
+  PrepareDSGFull(1, kNumDSPerGroup);
+  EXPECT_CALL(*tracker_mapper_, GetMSFimSocket())
+      .WillRepeatedly(Return(ms_fim_socket_));
+
+  // Add a FC
+  NodeInfo info;
+  info.ip = 10000;
+  info.port = 1234U;
+  info.pid = 1000;
+  info.SetUUID("ccc111-cd34-cdce-b442-eb5599996014");
+
+  topology_mgr_->AddFC(1, info);
+
+  // Announce the DSG state change
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&ms_fim1));
+  EXPECT_CALL(*tracker_mapper_, DSGBroadcast(0, _, _))
+      .WillOnce(SaveArg<1>(&ds_fim1));
+  EXPECT_CALL(*tracker_mapper_, FCBroadcast(_))
+      .WillOnce(SaveArg<0>(&fc_fim1))
+      .WillOnce(SaveArg<0>(&fc_fim2));
+  EXPECT_CALL(*tracker_mapper_, GetFCFimSocket(1))
+      .WillOnce(Return(fc_fim_socket_));
+
+  topology_mgr_->AnnounceDS(0, 0, true, true);
+  EXPECT_EQ(kTopologyChangeFim, ms_fim1->type());
+  EXPECT_EQ(kTopologyChangeFim, ds_fim1->type());
+  EXPECT_EQ(kTopologyChangeFim, fc_fim1->type());
+  EXPECT_EQ(kDSGStateChangeWaitFim, fc_fim2->type());
+
+  // Announce another DSG state change, piggyback (last FC FIM not sent)
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&ms_fim1));
+  EXPECT_CALL(*tracker_mapper_, DSGBroadcast(1, _, _))
+      .WillOnce(SaveArg<1>(&ds_fim1));
+  EXPECT_CALL(*tracker_mapper_, FCBroadcast(_))
+      .WillOnce(SaveArg<0>(&fc_fim1));
+
+  topology_mgr_->AnnounceDS(1, 0, true, true);
+  EXPECT_EQ(kTopologyChangeFim, ms_fim1->type());
+  EXPECT_EQ(kTopologyChangeFim, ds_fim1->type());
+  EXPECT_EQ(kTopologyChangeFim, fc_fim1->type());
+
+  // Wrong FC replies, no effect
+  topology_mgr_->AckDSGStateChangeWait(2);
+
+  // Right FC replies, triggers state change Fims
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&ms_fim1))
+      .WillOnce(SaveArg<0>(&ms_fim2));
+  EXPECT_CALL(*tracker_mapper_, DSGBroadcast(0, _, _))
+      .WillOnce(SaveArg<1>(&ds_fim1));
+  EXPECT_CALL(*tracker_mapper_, DSGBroadcast(1, _, _))
+      .WillOnce(SaveArg<1>(&ds_fim2));
+
+  topology_mgr_->AckDSGStateChangeWait(1);
+  EXPECT_EQ(kDSGStateChangeFim, ms_fim1->type());
+  EXPECT_EQ(kDSGStateChangeFim, ds_fim2->type());
+  uint64_t sc_id1 = dynamic_cast<DSGStateChangeFim&>(*ms_fim1)->
+      state_change_id;
+  uint64_t sc_id2 = dynamic_cast<DSGStateChangeFim&>(*ds_fim2)->
+      state_change_id;
+
+  // Group 0 DSs reply, last one triggers FC broadcast
+  GroupId group;
+  DSGroupState state;
+  for (GroupRole r = 0; r < kNumDSPerGroup - 1; ++r) {
+    EXPECT_FALSE(topology_mgr_->AckDSGStateChange(
+        sc_id1, ds_fim_socket_[r], &group, &state));
+  }
+
+  EXPECT_CALL(*tracker_mapper_, FCBroadcast(_))
+      .WillOnce(SaveArg<0>(&fc_fim1));
+
+  EXPECT_TRUE(topology_mgr_->AckDSGStateChange(
+      sc_id1, ds_fim_socket_[kNumDSPerGroup - 1], &group, &state));
+  EXPECT_EQ(kDSGStateChangeFim, fc_fim1->type());
+
+  // Group 1 DSs reply, last one triggers FC two broadcasts
+  for (GroupRole r = 0; r < kNumDSPerGroup - 1; ++r) {
+    EXPECT_FALSE(topology_mgr_->AckDSGStateChange(
+        sc_id2, ds_fim_socket_[kNumDSPerGroup + r], &group, &state));
+  }
+
+  EXPECT_CALL(*tracker_mapper_, FCBroadcast(_))
+      .WillOnce(SaveArg<0>(&fc_fim1))
+      .WillOnce(SaveArg<0>(&fc_fim2));
+
+  EXPECT_TRUE(topology_mgr_->AckDSGStateChange(
+      sc_id2, ds_fim_socket_[2 * kNumDSPerGroup - 1], &group, &state));
+  EXPECT_EQ(kDSGStateChangeFim, fc_fim1->type());
+  EXPECT_EQ(kDSGStateChangeWaitFim, fc_fim2->type());
+}
+
+TEST_F(TopologyTest, AnnounceDSGReadyTwiceWithFCPiggyback) {
+  FIM_PTR<IFim> ms_fim1, ms_fim2, ds_fim1, ds_fim2, fc_fim1, fc_fim2;
+  PrepareDSGFull(0);
+  PrepareDSGFull(1, kNumDSPerGroup);
+  EXPECT_CALL(*tracker_mapper_, GetMSFimSocket())
+      .WillRepeatedly(Return(ms_fim_socket_));
+
+  // Add a FC
+  NodeInfo info;
+  info.ip = 10000;
+  info.port = 1234U;
+  info.pid = 1000;
+  info.SetUUID("ccc111-cd34-cdce-b442-eb5599996014");
+
+  topology_mgr_->AddFC(1, info);
+
+  // Announce the DSG state change
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&ms_fim1));
+  EXPECT_CALL(*tracker_mapper_, DSGBroadcast(0, _, _))
+      .WillOnce(SaveArg<1>(&ds_fim1));
+  EXPECT_CALL(*tracker_mapper_, FCBroadcast(_))
+      .WillOnce(SaveArg<0>(&fc_fim1))
+      .WillOnce(SaveArg<0>(&fc_fim2));
+  EXPECT_CALL(*tracker_mapper_, GetFCFimSocket(1))
+      .WillOnce(Return(fc_fim_socket_));
+
+  topology_mgr_->AnnounceDS(0, 0, true, true);
+
+  // FC replies, triggers state change Fims
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&ms_fim1));
+  EXPECT_CALL(*tracker_mapper_, DSGBroadcast(0, _, _))
+      .WillOnce(SaveArg<1>(&ds_fim1));
+
+  topology_mgr_->AckDSGStateChangeWait(1);
+
+  // Other requests now sends immediately
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&ms_fim1))
+      .WillOnce(SaveArg<0>(&ms_fim2));
+  EXPECT_CALL(*tracker_mapper_, DSGBroadcast(1, _, _))
+      .WillOnce(SaveArg<1>(&ds_fim1))
+      .WillOnce(SaveArg<1>(&ds_fim2));
+  EXPECT_CALL(*tracker_mapper_, FCBroadcast(_))
+      .WillOnce(SaveArg<0>(&fc_fim1));
+
+  topology_mgr_->AnnounceDS(1, 0, true, true);
+  EXPECT_EQ(kTopologyChangeFim, ms_fim1->type());
+  EXPECT_EQ(kTopologyChangeFim, ds_fim1->type());
+  EXPECT_EQ(kTopologyChangeFim, fc_fim1->type());
+  EXPECT_EQ(kDSGStateChangeFim, ms_fim2->type());
+  EXPECT_EQ(kDSGStateChangeFim, ds_fim2->type());
 }
 
 TEST_F(TopologyTest, AnnounceDSLeave) {
@@ -754,13 +947,20 @@ TEST_F(TopologyTest, StartStopWorker) {
 
 TEST_F(TopologyTest, AnnounceShutdown) {
   EXPECT_CALL(*tracker_mapper_, GetMSFimSocket())
-      .WillOnce(Return(ms_fim_socket_));
-  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_));
+      .WillRepeatedly(Return(ms_fim_socket_));
+  FIM_PTR<IFim> fim1, fim2, fim3;
+  EXPECT_CALL(*ms_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&fim1))
+      .WillOnce(SaveArg<0>(&fim2))
+      .WillOnce(SaveArg<0>(&fim3));
   EXPECT_CALL(*tracker_mapper_, FCBroadcast(_));
   EXPECT_CALL(*tracker_mapper_, DSGBroadcast(_, _, _))
       .Times(kNumDSGroups);
 
   topology_mgr_->AnnounceShutdown();
+  EXPECT_EQ(kSysShutdownReqFim, fim1->type());
+  EXPECT_EQ(kDSGStateChangeFim, fim2->type());  // Group 0
+  EXPECT_EQ(kDSGStateChangeFim, fim3->type());  // Group 1
 }
 
 TEST_F(TopologyTest, AnnounceHalt) {

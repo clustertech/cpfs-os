@@ -28,6 +28,7 @@
 #include "config_mgr.hpp"
 #include "ds_query_mgr.hpp"
 #include "fim.hpp"
+#include "fim_socket.hpp"
 #include "fims.hpp"
 #include "logger.hpp"
 #include "member_fim_processor.hpp"
@@ -41,9 +42,6 @@
 #include "server/worker_util.hpp"
 
 namespace cpfs {
-
-class IFimSocket;
-
 namespace server {
 namespace ms {
 namespace {
@@ -61,6 +59,7 @@ class AdminFimProcessor : public MemberFimProcessor<AdminFimProcessor> {
   explicit AdminFimProcessor(BaseMetaServer* meta_server)
       : server_(meta_server) {
     AddHandler(&AdminFimProcessor::HandleStatFS);
+    AddHandler(&AdminFimProcessor::HandleDSGStateChangeReady);
     AddHandler(&AdminFimProcessor::HandleClusterStatus);
     AddHandler(&AdminFimProcessor::HandleClusterDiskInfo);
     AddHandler(&AdminFimProcessor::HandleConfigList);
@@ -73,6 +72,9 @@ class AdminFimProcessor : public MemberFimProcessor<AdminFimProcessor> {
 
   bool HandleStatFS(const FIM_PTR<FCStatFSFim>& fim,
                     const boost::shared_ptr<IFimSocket>& sender);
+
+  bool HandleDSGStateChangeReady(const FIM_PTR<DSGStateChangeReadyFim>& fim,
+                                 const boost::shared_ptr<IFimSocket>& sender);
 
   bool HandleClusterStatus(const FIM_PTR<ClusterStatusReqFim>& fim,
                            const boost::shared_ptr<IFimSocket>& sender);
@@ -140,6 +142,14 @@ bool AdminFimProcessor::HandleStatFS(
   (*reply)->total_inodes = total_inodes;
   (*reply)->free_inodes = free_inodes;
   r.SetNormalReply(reply);
+  return true;
+}
+
+bool AdminFimProcessor::HandleDSGStateChangeReady(
+    const FIM_PTR<DSGStateChangeReadyFim>& fim,
+    const boost::shared_ptr<IFimSocket>& sender) {
+  ClientNum peer_num = sender->GetReqTracker()->peer_client_num();
+  server_->topology_mgr()->AckDSGStateChangeWait(peer_num);
   return true;
 }
 
