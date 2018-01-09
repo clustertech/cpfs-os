@@ -781,6 +781,7 @@ DEFINE_FIM_CLASS_VOID(600, ClusterStatusReqFim, 0);
 DEFINE_FIM_CLASS_STRUCT(610, ClusterStatusReplyFim, kFimFlagReply) {
   uint8_t ms_state;  /**< Active MS state */
   uint8_t ms_role;  /**< Role of the active MS: 1 or 2 */
+  uint8_t fc_frozen;  /**< Whether FCs are frozen for state change: 0 or 1 */
   uint8_t num_dsg;  /**< Number of DS group info in the tail buffer */
   uint16_t num_node_info;  /**< Number of node info in the tail buffer */
   FIM_STRUCT_END(610, ClusterStatusReplyFim, kFimFlagReply);

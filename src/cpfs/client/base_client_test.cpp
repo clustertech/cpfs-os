@@ -2,6 +2,7 @@
 #include "client/base_client.hpp"
 
 #include <boost/bind.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <boost/thread/thread.hpp>
 
 #include <gmock/gmock.h>
@@ -65,6 +66,14 @@ TEST(BaseClientTest, GetSet) {
   client.set_authenticator(0);
   EXPECT_EQ(0U, client.client_num());
   client.set_client_num(1U);
+  {
+    boost::shared_lock<boost::shared_mutex> lock;
+    client.ReqFreezeWait(&lock);
+  }
+  client.SetReqFreeze(true);
+  client.SetReqFreeze(true);
+  client.SetReqFreeze(false);
+  client.SetReqFreeze(false);
 
   client.Init();
   EXPECT_CALL(*service, Run());

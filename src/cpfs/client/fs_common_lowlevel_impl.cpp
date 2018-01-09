@@ -24,6 +24,7 @@
 #include <boost/bind.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/thread/shared_mutex.hpp>
 
 #include "common.hpp"
 #include "ds_iface.hpp"
@@ -235,6 +236,8 @@ bool FSCommonLL::Read(
   std::vector<Segment> segments;
   file_coord->GetSegments(off, size, &segments);
   std::vector<boost::shared_ptr<IReqEntry> > entries;
+  boost::shared_lock<boost::shared_mutex> suspend_lock;
+  client_->ReqFreezeWait(&suspend_lock);
   for (unsigned i = 0; i < segments.size(); ++i) {
     Segment& segment = segments[i];
     FIM_PTR<ReadFim> rfim = ReadFim::MakePtr();
@@ -267,6 +270,8 @@ bool FSCommonLL::Readv(
   std::vector<Segment> segments;
   file_coord->GetSegments(off, size, &segments);
   std::vector<boost::shared_ptr<IReqEntry> > entries;
+  boost::shared_lock<boost::shared_mutex> suspend_lock;
+  client_->ReqFreezeWait(&suspend_lock);
   for (unsigned i = 0; i < segments.size(); ++i) {
     Segment& segment = segments[i];
     FIM_PTR<ReadFim> rfim = ReadFim::MakePtr();
@@ -328,6 +333,8 @@ bool FSCommonLL::Write(
     boost::shared_ptr<IReqTracker> tracker =
         GetDSTracker(segment.dsg, segment.dsr_data, segment.dsr_checksum);
     boost::shared_ptr<IReqEntry> entry = MakeDefaultReqEntry(tracker, rfim);
+    boost::shared_lock<boost::shared_mutex> suspend_lock;
+    client_->ReqFreezeWait(&suspend_lock);
     boost::unique_lock<MUTEX_TYPE> lock;
     tracker->GetReqLimiter()->Send(entry, &lock);
     entry->OnAck(boost::bind(&FSCommonLL::WriteAckCallback,

@@ -8,6 +8,8 @@
 
 #include "client/client_main.hpp"
 
+#include <boost/function.hpp>
+
 #include "asio_common.hpp"
 #include "asio_policy.hpp"
 #include "asio_policy_impl.hpp"

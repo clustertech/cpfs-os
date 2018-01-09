@@ -12,6 +12,7 @@
 
 #include <boost/scoped_ptr.hpp>
 #include <boost/thread/condition.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <boost/unordered_map.hpp>
 
 #include "asio_common.hpp"
@@ -181,6 +182,26 @@ class BaseClient : public IService {
   ClientNum client_num();
 
   /**
+   * Set request freeze state.
+   *
+   * If enabled, all new FUSE requests will block until the state is
+   * disabled.
+   *
+   * @param freeze Whether to freeze requests
+   */
+  void SetReqFreeze(bool freeze);
+
+  /**
+   * Block until request freeze state is disabled.
+   *
+   * Return immediately if freeze is currently disabled.
+   *
+   * @param lock The lock to hold once the freeze is over.  While the
+   * lock is not destroyed, request freeze setting will block.
+   */
+  void ReqFreezeWait(boost::shared_lock<boost::shared_mutex>* lock);
+
+  /**
    * Record new state for a DS group.
    *
    * @param group The group to record new state
@@ -230,6 +251,8 @@ class BaseClient : public IService {
   // Internal states
   // TODO(Isaac): Protect with rw-lock for multi-thread access (race?)
   ClientNum client_num_; /**< Client number */
+  boost::shared_mutex freeze_mutex_;  /**< Protect frozen_ */
+  bool frozen_;  /**< Whether DSC request freeze is active */
   bool shutting_down_; /**< Whether Shutdown() is called */
   /** Type for the recorded states a DS group */
   struct DSGroupInfo {

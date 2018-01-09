@@ -13,11 +13,13 @@
 #include "common.hpp"
 #include "ds_iface.hpp"
 #include "dsg_state.hpp"
+#include "event.hpp"
 #include "fim.hpp"
 #include "fim_socket.hpp"
 #include "fims.hpp"
 #include "logger.hpp"
 #include "member_fim_processor.hpp"
+#include "op_completion.hpp"
 #include "req_entry.hpp"
 #include "req_tracker.hpp"
 #include "shutdown_mgr.hpp"
@@ -81,8 +83,17 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
 
   bool HandleDSGStateChangeWait(const FIM_PTR<DSGStateChangeWaitFim>& fim,
                                 const boost::shared_ptr<IFimSocket>& socket) {
-    if ((*fim)->enable)
+    LOG(notice, Server, "Setting request freeze to ",
+        PVal(int((*fim)->enable)));
+    client_->SetReqFreeze((*fim)->enable);
+    if ((*fim)->enable) {
+      Event ev;
+      client_->op_completion_checker_set()->OnCompleteAllGlobal(
+          boost::bind(&Event::Invoke, &ev));
+      ev.Wait();
+      LOG(informational, Server, "Acknowledging request freeze request");
       socket->WriteMsg(DSGStateChangeReadyFim::MakePtr());
+    }
     return true;
   }
 

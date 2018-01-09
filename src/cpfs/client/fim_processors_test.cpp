@@ -19,6 +19,7 @@
 #include "fim_processor_mock.hpp"
 #include "fim_socket_mock.hpp"
 #include "fims.hpp"
+#include "op_completion_mock.hpp"
 #include "req_entry_mock.hpp"
 #include "req_tracker_mock.hpp"
 #include "shutdown_mgr_mock.hpp"
@@ -28,6 +29,7 @@
 #include "client/conn_mgr_mock.hpp"
 
 using ::testing::_;
+using ::testing::InvokeArgument;
 using ::testing::Mock;
 using ::testing::Return;
 using ::testing::SaveArg;
@@ -46,6 +48,7 @@ class ClientFimProcessorTest : public ::testing::Test {
   MockIConnMgr* conn_mgr_;
   MockICacheMgr* cache_mgr_;
   MockIShutdownMgr* shutdown_mgr_;
+  MockIOpCompletionCheckerSet* op_completion_checker_set_;
 
   ClientFimProcessorTest()
       : ms_proc_(MakeMSCtrlFimProcessor(&client_)),
@@ -55,6 +58,8 @@ class ClientFimProcessorTest : public ::testing::Test {
     client_.set_conn_mgr(conn_mgr_ = new MockIConnMgr);
     client_.set_cache_mgr(cache_mgr_ = new MockICacheMgr);
     client_.set_shutdown_mgr(shutdown_mgr_ = new MockIShutdownMgr);
+    client_.set_op_completion_checker_set(
+        op_completion_checker_set_ = new MockIOpCompletionCheckerSet);
   }
 };
 
@@ -107,6 +112,8 @@ TEST_F(ClientFimProcessorTest, MSProcRegRejected) {
 TEST_F(ClientFimProcessorTest, DSGStateChangeWait) {
   boost::shared_ptr<MockIFimSocket> socket(new MockIFimSocket);
   FIM_PTR<IFim> response;
+  EXPECT_CALL(*op_completion_checker_set_, OnCompleteAllGlobal(_))
+      .WillOnce(InvokeArgument<0>());
   EXPECT_CALL(*socket, WriteMsg(_))
       .WillOnce(SaveArg<0>(&response));
 

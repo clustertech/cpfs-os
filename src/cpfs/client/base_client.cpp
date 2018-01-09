@@ -34,7 +34,8 @@
 namespace cpfs {
 namespace client {
 
-BaseClient::BaseClient() : client_num_(0), shutting_down_(false) {}
+BaseClient::BaseClient()
+    : client_num_(0), frozen_(false), shutting_down_(false) {}
 
 BaseClient::~BaseClient() {}
 
@@ -145,6 +146,21 @@ void BaseClient::set_client_num(ClientNum client_num) {
  */
 ClientNum BaseClient::client_num() {
   return client_num_;
+}
+
+void BaseClient::SetReqFreeze(bool freeze) {
+  if (freeze && !frozen_) {
+    freeze_mutex_.lock();
+    frozen_ = true;
+  } else if (!freeze && frozen_) {
+    frozen_ = false;
+    freeze_mutex_.unlock();
+  }
+}
+
+void BaseClient::ReqFreezeWait(boost::shared_lock<boost::shared_mutex>* lock) {
+  MUTEX_LOCK(boost::shared_lock, freeze_mutex_, my_lock);
+  lock->swap(my_lock);
 }
 
 DSGroupState BaseClient::set_dsg_state(GroupId group, DSGroupState state,
