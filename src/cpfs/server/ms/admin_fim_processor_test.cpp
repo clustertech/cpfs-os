@@ -201,6 +201,8 @@ TEST_F(MSAdminFimProcessorTest, ClusterStatus) {
       .WillOnce(Return(kDSGReady));
   EXPECT_CALL(*topology_, GetDSGState(1, _))
       .WillOnce(Return(kDSGPending));
+  EXPECT_CALL(*topology_, IsDSGStateChanging())
+      .WillOnce(Return(true));
   boost::shared_ptr<MockIFimSocket> fim_socket =
       boost::make_shared<MockIFimSocket>();
   FIM_PTR<IFim> result;
@@ -215,6 +217,7 @@ TEST_F(MSAdminFimProcessorTest, ClusterStatus) {
   const ClusterStatusReplyFim& rresult =
       static_cast<const ClusterStatusReplyFim&>(*result);
   EXPECT_EQ(kStateDegraded, rresult->ms_state);
+  EXPECT_EQ(1U, rresult->state_changing);
   EXPECT_EQ(1U, rresult->ms_role);
   EXPECT_EQ(2U, rresult->num_dsg);
   const uint8_t* dsg_states

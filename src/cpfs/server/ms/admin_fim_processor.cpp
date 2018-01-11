@@ -178,6 +178,7 @@ bool AdminFimProcessor::HandleClusterStatus(
   if ((*reply)->ms_state == kStateActive &&
       !server_->tracker_mapper()->GetMSFimSocket())
     (*reply)->ms_state = kStateDegraded;
+  (*reply)->state_changing = server_->topology_mgr()->IsDSGStateChanging();
   (*reply)->ms_role =
       atoi(server_->configs().role().substr(2).c_str());
   (*reply)->num_dsg = num_dsg;

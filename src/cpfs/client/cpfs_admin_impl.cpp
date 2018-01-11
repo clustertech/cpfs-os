@@ -70,6 +70,8 @@ class CpfsAdmin : public ICpfsAdmin {
       const ClusterStatusReplyFim& rreply =
           static_cast<ClusterStatusReplyFim&>(*reply);
       cluster_info.ms_state = ToStr(MSState(rreply->ms_state));
+      if (rreply->state_changing)
+        cluster_info.ms_state += " (DSG state changing)";
       cluster_info.ms_role =
           (boost::format("MS%d") % int(rreply->ms_role)).str();
       const uint8_t* dsg_states_raw =

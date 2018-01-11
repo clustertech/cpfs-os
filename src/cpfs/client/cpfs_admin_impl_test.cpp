@@ -110,6 +110,7 @@ TEST_F(CpfsAdminTest, QueryStatus) {
   FIM_PTR<ClusterStatusReplyFim> reply
       = ClusterStatusReplyFim::MakePtr(dsg_state_size + node_infos_size);
   (*reply)->ms_state = kStateActive;
+  (*reply)->state_changing = 1;
   (*reply)->ms_role = 2;
   (*reply)->num_dsg = 2;
   (*reply)->num_node_info = 2;
@@ -123,7 +124,7 @@ TEST_F(CpfsAdminTest, QueryStatus) {
       PrepareAddRequest(req_tracker, &req_fim, reply);
   ClusterInfo info = cpfs_admin_->QueryStatus();
 
-  EXPECT_EQ(std::string("Active"), info.ms_state);
+  EXPECT_EQ(std::string("Active (DSG state changing)"), info.ms_state);
   EXPECT_EQ(std::string("MS2"), info.ms_role);
   EXPECT_EQ(std::string("Ready"), info.dsg_states[0]);
   EXPECT_EQ(std::string("Pending"), info.dsg_states[1]);

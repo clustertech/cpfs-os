@@ -441,7 +441,9 @@ TEST_F(TopologyTest, AnnounceDSGReadyTwiceWithFC) {
   EXPECT_CALL(*tracker_mapper_, GetFCFimSocket(1))
       .WillOnce(Return(fc_fim_socket_));
 
+  EXPECT_FALSE(topology_mgr_->IsDSGStateChanging());
   topology_mgr_->AnnounceDS(0, 0, true, true);
+  EXPECT_TRUE(topology_mgr_->IsDSGStateChanging());
   EXPECT_EQ(kTopologyChangeFim, ms_fim1->type());
   EXPECT_EQ(kTopologyChangeFim, ds_fim1->type());
   EXPECT_EQ(kTopologyChangeFim, fc_fim1->type());

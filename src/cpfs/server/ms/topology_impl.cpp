@@ -241,6 +241,7 @@ class TopologyMgr : public ITopologyMgr {
   void AnnounceDS(GroupId group, GroupRole role, bool is_added,
                   bool state_changed);
   void AnnounceDSGState(GroupId group);
+  bool IsDSGStateChanging();
   void AckDSGStateChangeWait(ClientNum client);
   bool AckDSGStateChange(uint64_t state_change_id,
                          boost::shared_ptr<IFimSocket> peer,
@@ -681,6 +682,10 @@ void TopologyMgr::SetFCsDSCFrozen_(bool enable) {
   FIM_PTR<DSGStateChangeWaitFim> fim = DSGStateChangeWaitFim::MakePtr();
   (*fim)->enable = enable;
   tracker_mapper->FCBroadcast(fim);
+}
+
+bool TopologyMgr::IsDSGStateChanging() {
+  return dsc_in_progress_;
 }
 
 void TopologyMgr::AckDSGStateChangeWait(ClientNum client) {

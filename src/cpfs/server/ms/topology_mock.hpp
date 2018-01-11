@@ -27,6 +27,7 @@ namespace ms {
   ((SendAllDSInfo, void, (boost::shared_ptr<IFimSocket>)))              \
   ((AnnounceDS, void, (GroupId)(GroupRole)(bool)(bool)))                \
   ((AnnounceDSGState, void, (GroupId)))                                 \
+  ((IsDSGStateChanging, bool,))                                         \
   ((AckDSGStateChangeWait, void, (ClientNum)))                          \
   ((AckDSGStateChange, bool,                                            \
     (uint64_t)(boost::shared_ptr<IFimSocket>)(GroupId*)(DSGroupState*)  \

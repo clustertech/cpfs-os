@@ -211,6 +211,11 @@ class ITopologyMgr {
    */
   virtual void AnnounceDSGState(GroupId group) = 0;
 
+/**
+   * @return Whether DSG state change is in progress
+   */
+  virtual bool IsDSGStateChanging() = 0;
+
   /**
    * Handle acknowledgement of reception of DSGStateChangeWait Fim.
    */
