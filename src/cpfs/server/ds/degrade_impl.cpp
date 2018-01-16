@@ -282,8 +282,18 @@ class DegradedCache : public IDegradedCache {
   void Truncate(InodeNum inode, std::size_t dsg_off) {
     MUTEX_LOCK_GUARD(data_mutex_);
     std::size_t last_segment_off = dsg_off / kSegmentSize * kSegmentSize;
-    if (last_segment_off < dsg_off)
+    if (last_segment_off < dsg_off) {
+      HandleMap::iterator last_it = handles_.find(
+          std::make_pair(inode, last_segment_off));
+      if (last_it != handles_.end()) {
+        char* segment = last_it->second->data();
+        if (segment) {
+          std::size_t last_off = dsg_off % kSegmentSize;
+          std::memset(segment + last_off, '\0', kSegmentSize - last_off);
+        }
+      }
       last_segment_off += kSegmentSize;
+    }
     FreeEntriesFrom_(inode, handles_.lower_bound(
         std::make_pair(inode, last_segment_off)));
   }

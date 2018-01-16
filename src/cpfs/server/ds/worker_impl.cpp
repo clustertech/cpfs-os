@@ -1146,6 +1146,13 @@ bool Worker::HandleTruncateData(
       (*fim)->inode, (*fim)->optime, data_off, cs_off, size,
       update_fim->tail_buf());
   replier->SetResult(result);
+  IDegradedCache* degraded_cache = ds()->degraded_cache();
+  // Truncate cache only for non-checksum role: the checksum role
+  // cache truncation needs to be done in DegradedTruncateData to
+  // properly update the checksum.
+  if (degraded_cache->IsActive()
+      && (*fim)->target_role != (*fim)->checksum_role)
+    degraded_cache->Truncate((*fim)->inode, (*fim)->dsg_off);
   if (result == 0) {
     cache_invalidator_.InvalidateClients((*fim)->inode, true, kNotClient);
     if (size == 0 || IsDSFailed((*fim)->checksum_role, (*fim)->inode))
@@ -1192,10 +1199,10 @@ void Worker::DegradedTruncateData(
     std::memset(buf, '\0', size);
     cache_handle->Write(data_off % kSegmentSize, buf, size, cs_buf);
     ds()->store()->ApplyDelta((*fim)->inode, (*fim)->optime, (*fim)->last_off,
-                              dsg_off, cs_buf, size);
+                              DsgToChecksumOffset(dsg_off), cs_buf, size);
   }
   replier.SetResult(0);
-  ds()->degraded_cache()->Truncate((*fim)->inode, dsg_off);
+  ds()->degraded_cache()->Truncate((*fim)->inode, (*fim)->dsg_off);
   cache_invalidator_.InvalidateClients((*fim)->inode, true, kNotClient);
 }
 

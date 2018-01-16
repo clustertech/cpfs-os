@@ -1308,6 +1308,8 @@ TEST_F(DSWorkerTest, TruncateDataFimSelf) {  // Truncate offset is myself
   FSTime& optime = (*fim)->optime;
   char* ptr;
   PrepareCalls(1, inode);
+  EXPECT_CALL(*degraded_cache_, IsActive())
+      .WillOnce(Return(false));
   EXPECT_CALL(*tracker_mapper_, GetDSTracker(4, kNumDSPerGroup - 1))
       .WillOnce(Return(d_tracker_));
   EXPECT_CALL(*store_, TruncateData(inode, Ref(optime), 100, 0,
@@ -1339,6 +1341,8 @@ TEST_F(DSWorkerTest, TruncateDataFimAfter) {  // Truncate offset is after me
   FSTime& optime = (*fim)->optime;
   char* ptr;
   PrepareCalls(kNumDSPerGroup - 1, inode);
+  EXPECT_CALL(*degraded_cache_, IsActive())
+      .WillOnce(Return(false));
   EXPECT_CALL(*store_, TruncateData(inode, Ref(optime), kSegmentSize,
                                     kSegmentSize, 0, _))
       .WillOnce(DoAll(SaveArg<5>(&ptr),
@@ -1354,6 +1358,8 @@ TEST_F(DSWorkerTest, TruncateDataFimAfter) {  // Truncate offset is after me
 TEST_F(DSWorkerTest, TruncateDataFimFailChecksumSending) {
   InodeNum inode = kNumDSPerGroup;
   PrepareCalls(1, inode);
+  EXPECT_CALL(*degraded_cache_, IsActive())
+      .WillOnce(Return(false));
   EXPECT_CALL(*store_, TruncateData(inode, _, 100, 0, kSegmentSize - 100, _))
       .WillOnce(Return(0));
   EXPECT_CALL(*tracker_mapper_, GetDSTracker(4, kNumDSPerGroup - 1))
@@ -1383,6 +1389,9 @@ TEST_F(DSWorkerTest, TruncateDataFimChecksumDegraded) {
   FIM_PTR<IFim> reply;
   InodeNum inode = kNumDSPerGroup;
   PrepareCalls(1, inode);
+  EXPECT_CALL(*degraded_cache_, IsActive())
+      .WillOnce(Return(true));
+  EXPECT_CALL(*degraded_cache_, Truncate(inode, kSegmentSize + 100));
   EXPECT_CALL(*store_, TruncateData(inode, _, 100, 0, kSegmentSize - 100, _))
       .WillOnce(Return(0));
   EXPECT_CALL(*m_fim_socket_, WriteMsg(_))
@@ -1392,6 +1401,7 @@ TEST_F(DSWorkerTest, TruncateDataFimChecksumDegraded) {
   FIM_PTR<TruncateDataFim> fim(new TruncateDataFim);
   (*fim)->inode = inode;
   (*fim)->dsg_off = kSegmentSize + 100;
+  (*fim)->target_role = 0;
   (*fim)->checksum_role = kNumDSPerGroup - 1;
   data_server_.set_dsg_state(2, kDSGDegraded, kNumDSPerGroup - 1);
   worker_->Process(fim, m_fim_socket_);
@@ -1437,7 +1447,7 @@ TEST_F(DSWorkerTest, TruncateDataFimDegraded) {
 
   // Case 1: no data to do checksum for
   EXPECT_CALL(*degraded_cache_,
-              Truncate(inode, (kNumDSPerGroup + 1) * kSegmentSize));
+              Truncate(inode, 2 * kSegmentSize));
   PrepareInvalidation(inode, kNotClient);
   FIM_PTR<IFim> reply;
   EXPECT_CALL(*m_fim_socket_, WriteMsg(_))
@@ -1470,8 +1480,7 @@ TEST_F(DSWorkerTest, TruncateDataFimDegraded) {
   const void* cs_buf;
   EXPECT_CALL(*store_, ApplyDelta(inode, Ref((*fim)->optime),
                                   kSegmentSize + 1000,
-                                  kSegmentSize + 100, _,
-                                  kSegmentSize - 100, true))
+                                  100, _, kSegmentSize - 100, true))
       .WillOnce(DoAll(SaveArg<4>(&cs_buf),
                       Return(0)));
 
