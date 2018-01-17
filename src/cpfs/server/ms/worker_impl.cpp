@@ -711,8 +711,9 @@ bool Worker::HandleOpen(const FIM_PTR<OpenFim>& fim,
   ms()->inode_usage()->
       SetFCOpened(fim->req_id() >> (64U - kClientBits), inode,
                   is_write ? kInodeWriteAccess : kInodeReadAccess);
-  if (is_write && client_num != kNotClient) {
-    cache_invalidator_.InvalidateClients(inode, false, client_num);
+  if (is_write) {
+    if (client_num != kNotClient)
+      cache_invalidator_.InvalidateClients(inode, false, client_num);
     ms()->dirty_inode_mgr()->SetVolatile(inode, true, true, 0);
   }
   if (need_trunc && (dirty_attr || truncated)) {
