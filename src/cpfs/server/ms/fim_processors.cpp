@@ -226,6 +226,14 @@ class InitFimProcessor : public MemberFimProcessor<InitFimProcessor> {
       socket->WriteMsg(MSRegRejectedFim::MakePtr());
       return true;
     }
+    // Reply DS the group ID and role assigned
+    FIM_PTR<DSMSRegSuccessFim> success_fim =
+        DSMSRegSuccessFim::MakePtr();
+    (*success_fim)->ds_group = group_id;
+    (*success_fim)->ds_role = role_id;
+    socket->WriteMsg(success_fim);
+    // Set the DS Fim socket only after the reply is sent, to ensure
+    // that the peer have already set the request tracker
     if ((*fim)->distressed)
       server_->topology_mgr()->SetDSGDistressed(group_id, true);
     server_->tracker_mapper()->SetDSFimSocket(socket, group_id, role_id);
@@ -235,12 +243,6 @@ class InitFimProcessor : public MemberFimProcessor<InitFimProcessor> {
         group_id, role_id));
     LOG(notice, Server, "Connection from ",
         socket->name(), " ", socket->remote_info(), " accepted");
-    // Reply DS the group ID and role assigned
-    FIM_PTR<DSMSRegSuccessFim> success_fim =
-        DSMSRegSuccessFim::MakePtr();
-    (*success_fim)->ds_group = group_id;
-    (*success_fim)->ds_role = role_id;
-    socket->WriteMsg(success_fim);
     bool all_ds_ready = server_->topology_mgr()->AllDSReady();
     server_->topology_mgr()->
         AnnounceDS(group_id, role_id, true, state_changed || all_ds_ready);
