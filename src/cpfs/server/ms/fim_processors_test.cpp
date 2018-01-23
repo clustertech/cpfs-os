@@ -27,7 +27,7 @@
 #include "log_testlib.hpp"
 #include "logger.hpp"
 #include "mock_actions.hpp"
-#include "req_entry.hpp"
+#include "req_entry_mock.hpp"
 #include "req_tracker_mock.hpp"
 #include "shutdown_mgr_mock.hpp"
 #include "thread_fim_processor_mock.hpp"
@@ -1146,6 +1146,70 @@ TEST_F(MSFimProcessorsTest, DSResyncPhaseInodeList) {
 
   EXPECT_TRUE(ms_ctrl_fim_proc_->Process(fim, ms_fim_socket_));
   EXPECT_EQ(kResultCodeReplyFim, reply->type());
+}
+
+TEST_F(MSFimProcessorsTest, NotDegradedTruncate) {
+  // Successful case
+  boost::shared_ptr<MockIReqEntry> entry(new MockIReqEntry);
+  EXPECT_CALL(*ds_req_tracker_, GetRequestEntry(42))
+      .WillRepeatedly(Return(entry));
+  FIM_PTR<TruncateDataFim> tfim = TruncateDataFim::MakePtr();
+  EXPECT_CALL(*entry, request())
+      .WillRepeatedly(Return(tfim));
+  tfim->set_req_id(43);
+  (*tfim)->target_role = 3;
+  boost::shared_ptr<IFimSocket> ifs = ds_fim_socket_;
+  EXPECT_CALL(*tracker_mapper_, FindDSRole(ifs, _, _))
+      .WillOnce(DoAll(SetArgPointee<1>(0),
+                      SetArgPointee<2>(2),
+                      Return(true)));
+  boost::shared_ptr<MockIReqTracker> ds_tracker(new MockIReqTracker);
+  EXPECT_CALL(*tracker_mapper_, GetDSTracker(0, 3))
+      .WillOnce(Return(ds_tracker));
+  EXPECT_CALL(*ds_req_tracker_, RedirectRequest(
+      43, boost::shared_ptr<IReqTracker>(ds_tracker)));
+
+  FIM_PTR<NotDegradedFim> fim = NotDegradedFim::MakePtr();
+  (*fim)->redirect_req = 42;
+  EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket_));
+
+  // Failure case: Role not found
+  EXPECT_CALL(*tracker_mapper_, FindDSRole(ifs, _, _))
+      .WillOnce(Return(false));
+
+  EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket_));
+
+  Mock::VerifyAndClear(ds_tracker.get());
+  Mock::VerifyAndClear(tracker_mapper_);
+  Mock::VerifyAndClear(ds_req_tracker_.get());
+}
+
+TEST_F(MSFimProcessorsTest, NotDegradedMiscErrors) {
+  // No request entry
+  EXPECT_CALL(*ds_req_tracker_, GetRequestEntry(42))
+      .WillOnce(Return(boost::shared_ptr<IReqEntry>()));
+
+  FIM_PTR<NotDegradedFim> fim = NotDegradedFim::MakePtr();
+  (*fim)->redirect_req = 42;
+  EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket_));
+
+  // No request
+  boost::shared_ptr<MockIReqEntry> entry(new MockIReqEntry);
+  EXPECT_CALL(*ds_req_tracker_, GetRequestEntry(42))
+      .WillRepeatedly(Return(entry));
+  EXPECT_CALL(*entry, request())
+      .WillOnce(Return(FIM_PTR<IFim>()));
+
+  EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket_));
+
+  // Request is not recognized
+  FIM_PTR<IFim> rfim = ReadFim::MakePtr();
+  EXPECT_CALL(*entry, request())
+      .WillOnce(Return(rfim));
+
+  EXPECT_TRUE(ds_ctrl_fim_proc_->Process(fim, ds_fim_socket_));
+
+  Mock::VerifyAndClear(ds_req_tracker_.get());
 }
 
 }  // namespace

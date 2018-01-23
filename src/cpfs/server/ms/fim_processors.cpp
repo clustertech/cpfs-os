@@ -598,6 +598,7 @@ class DSCtrlFimProcessor : public MemberFimProcessor<DSCtrlFimProcessor> {
     AddHandler(&DSCtrlFimProcessor::HandleDSGStateChangeAck);
     AddHandler(&DSCtrlFimProcessor::HandleDSResyncEnd);
     AddHandler(&DSCtrlFimProcessor::HandleDSResyncPhaseInodeList);
+    AddHandler(&DSCtrlFimProcessor::HandleNotDegraded);
   }
 
  private:
@@ -695,6 +696,46 @@ class DSCtrlFimProcessor : public MemberFimProcessor<DSCtrlFimProcessor> {
     reply->set_final();
     (*reply)->err_no = 0;
     peer->WriteMsg(reply);
+  }
+
+  bool HandleNotDegraded(const FIM_PTR<NotDegradedFim>& fim,
+                         const boost::shared_ptr<IFimSocket>& socket) {
+    IReqTracker* tracker = socket->GetReqTracker();
+    boost::shared_ptr<IReqEntry> entry =
+        tracker->GetRequestEntry((*fim)->redirect_req);
+    if (!entry) {
+      LOG(informational, Server,
+          "Cannot find request entry when processing NotDegradedFim, req = ",
+          PHex((*fim)->redirect_req));
+      return true;
+    }
+    FIM_PTR<IFim> req = entry->request();
+    if (!req) {
+      LOG(informational, Server,
+          "Cannot find request when processing NotDegradedFim, req = ",
+          PVal((*fim)->redirect_req));
+      return true;
+    }
+    GroupRole redirect_target, dummy;
+    GroupId group;
+    if (req->type() == kTruncateDataFim) {
+      TruncateDataFim& tdfim = static_cast<TruncateDataFim&>(*req);
+      if (!server_->tracker_mapper()->FindDSRole(socket, &group, &dummy)) {
+        LOG(informational, Server,
+            "Cannot find group when processing NotDegradedFim: ",
+            PVal(socket));
+        return true;
+      }
+      redirect_target = tdfim->target_role;
+    } else {
+      LOG(informational, Server, "Unexpected NotDegraded Fim from ",
+          PVal(socket), " ignored: ", PVal(fim));
+      return true;
+    }
+    tracker->RedirectRequest(
+        req->req_id(),
+        server_->tracker_mapper()->GetDSTracker(group, redirect_target));
+    return true;
   }
 };
 

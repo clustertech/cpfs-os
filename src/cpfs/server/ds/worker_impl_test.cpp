@@ -1299,6 +1299,27 @@ TEST_F(DSWorkerTest, ChecksumUpdateFimDefer) {
   Mock::VerifyAndClear(rec_mgr_);
 }
 
+TEST_F(DSWorkerTest, TruncateDataFimToResync) {
+  FIM_PTR<TruncateDataFim> fim(new TruncateDataFim);
+  InodeNum inode = (*fim)->inode = 42;
+  (*fim)->dsg_off = 0;
+  (*fim)->checksum_role = kNumDSPerGroup - 1;
+  FIM_PTR<IFim> reply;
+  PrepareCalls(1, inode);
+  EXPECT_CALL(*m_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&reply));
+
+  data_server_.set_dsg_state(1, kDSGResync, 1);
+  boost::unordered_set<InodeNum> inodes;
+  inodes.insert(42);
+  data_server_.set_dsg_inodes_to_resync(&inodes);
+  worker_->Process(fim, m_fim_socket_);
+
+  EXPECT_TRUE(reply->is_final());
+  ResultCodeReplyFim& rfim = dynamic_cast<ResultCodeReplyFim&>(*reply);
+  EXPECT_EQ(0U, rfim->err_no);
+}
+
 TEST_F(DSWorkerTest, TruncateDataFimSelf) {  // Truncate offset is myself
   FIM_PTR<TruncateDataFim> fim(new TruncateDataFim);
   InodeNum inode = (*fim)->inode = kNumDSPerGroup;
@@ -1561,6 +1582,18 @@ TEST_F(DSWorkerTest, AttrUpdateFim) {
   EXPECT_EQ(0U, rreply2->mtime.sec);
   EXPECT_EQ(0U, rreply2->mtime.ns);
   EXPECT_EQ(0U, rreply2->size);
+
+  // Recovering and failed: Just reply 0
+  PrepareCalls(0, 132);
+  EXPECT_CALL(*m_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&reply));
+
+  data_server_.set_dsg_state(1, kDSGRecovering, 0, 0);
+  worker_->Process(fim, m_fim_socket_);
+  AttrUpdateReplyFim& rreply3 = dynamic_cast<AttrUpdateReplyFim&>(*reply);
+  EXPECT_EQ(0U, rreply3->mtime.sec);
+  EXPECT_EQ(0U, rreply3->mtime.ns);
+  EXPECT_EQ(0U, rreply3->size);
 }
 
 TEST_F(DSWorkerTest, LockUnlock) {

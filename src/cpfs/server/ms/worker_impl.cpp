@@ -1200,8 +1200,8 @@ void Worker::DSTruncate(const FSTime& optime, InodeNum inode,
       (*req)->last_off = size;
       (*req)->target_role = role;
       (*req)->checksum_role = segments[i].dsr_checksum;
-      if (state == kDSGDegraded && role == failed) {
-        if (role == (*req)->checksum_role)
+      if ((state == kDSGDegraded || state == kDSGResync) && role == failed) {
+        if (state == kDSGDegraded && role == (*req)->checksum_role)
           continue;
         target = (*req)->checksum_role;  // Redirect
       }

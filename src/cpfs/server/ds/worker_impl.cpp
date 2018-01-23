@@ -339,7 +339,8 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
     DSGroupState state = ds()->dsg_state(&state_change_id, failed_ret);
     if (state == kDSGDegraded)
       return true;
-    return state == kDSGResync && ds()->is_inode_to_resync(inode);
+    return state == kDSGResync && ds()->is_inode_to_resync(inode)
+        && !ds()->is_inode_resyncing(inode);
   }
 
   bool IsDSFailed(GroupRole role, InodeNum inode) {
@@ -356,8 +357,6 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
    *
    * @param peer The peer sending the Fim
    *
-   * @param checksum_role The checksum role for the operation
-   *
    * @param inode The inode for the operation
    *
    * @param dsg_off The DSG offset of the operation
@@ -371,20 +370,21 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
    */
   bool DegradedModeCheck(const FIM_PTR<IFim>& fim,
                          const boost::shared_ptr<IFimSocket>& peer,
-                         GroupRole target_role, GroupRole checksum_role,
-                         InodeNum inode, std::size_t dsg_off,
+                         GroupRole target_role, InodeNum inode,
+                         std::size_t dsg_off,
                          boost::shared_ptr<IDegradedCacheHandle>*
-                         cache_handle_ret) {
-    if (GetRole() == checksum_role) {
-      GroupRole failed;
-      if (!IsDSGDegraded(&failed, inode) || failed != target_role) {
-        LOG(informational, Degraded, "Inappropriate degraded msg, ", PVal(fim));
-        FIM_PTR<NotDegradedFim> redirect_req =
-            NotDegradedFim::MakePtr();
-        (*redirect_req)->redirect_req = fim->req_id();
-        peer->WriteMsg(redirect_req);
-        return true;
-      }
+                         cache_handle_ret,
+                         bool do_recover = true) {
+    GroupRole failed;
+    if (!IsDSGDegraded(&failed, inode) || failed != target_role) {
+      LOG(informational, Degraded, "Inappropriate degraded msg, ", PVal(fim));
+      FIM_PTR<NotDegradedFim> redirect_req =
+          NotDegradedFim::MakePtr();
+      (*redirect_req)->redirect_req = fim->req_id();
+      peer->WriteMsg(redirect_req);
+      return true;
+    }
+    if (do_recover) {
       *cache_handle_ret = DoReqRecovery(fim, peer, inode, CgStart(dsg_off));
       if (!*cache_handle_ret)
         return true;  // Actions to be performed later, no reply sent yet
@@ -705,7 +705,8 @@ bool Worker::HandleWrite(const FIM_PTR<WriteFim>& fim,
   ds()->tracer()->Log(
       __func__, inode, peer->GetReqTracker()->peer_client_num());
   boost::shared_ptr<IDegradedCacheHandle> cache_handle;
-  if (DegradedModeCheck(fim, peer, (*fim)->target_role, (*fim)->checksum_role,
+  if (GetRole() == (*fim)->checksum_role &&
+      DegradedModeCheck(fim, peer, (*fim)->target_role,
                         inode, dsg_off, &cache_handle))
     return true;
   if (!distressed_ || cache_handle) {
@@ -915,7 +916,8 @@ bool Worker::HandleRead(const FIM_PTR<ReadFim>& fim,
   ds()->tracer()->Log(__func__, inode,
                       peer->GetReqTracker()->peer_client_num());
   boost::shared_ptr<IDegradedCacheHandle> cache_handle;
-  if (DegradedModeCheck(fim, peer, (*fim)->target_role, (*fim)->checksum_role,
+  if (GetRole() == (*fim)->checksum_role &&
+      DegradedModeCheck(fim, peer, (*fim)->target_role,
                         inode, dsg_off, &cache_handle))
     return true;
   if (distressed_ && !cache_handle) {
@@ -1138,6 +1140,14 @@ bool Worker::HandleTruncateData(
   // initial reply.
   boost::unique_lock<MUTEX_TYPE> repl_lock;
   boost::scoped_ptr<DSReplyOnExit> replier(new DSReplyOnExit(fim, peer));
+  // Skip the processing and just reply if in data resync and
+  // truncation is done to an inode about to resync (happen during DS
+  // resync)
+  GroupRole failed;
+  if (IsDSGDegraded(&failed, (*fim)->inode) && failed == GetRole()) {
+    replier->SetResult(0);
+    return true;
+  }
   std::size_t dsg_off = (*fim)->dsg_off, data_off, cs_off, size;
   GetTruncateArgs((*fim)->inode, role, &dsg_off, &data_off, &cs_off, &size);
   FIM_PTR<ChecksumUpdateFim> update_fim = ChecksumUpdateFim::MakePtr(size);
@@ -1188,10 +1198,11 @@ void Worker::DegradedTruncateData(
   std::size_t dsg_off = (*fim)->dsg_off, data_off, cs_off, size;
   GetTruncateArgs((*fim)->inode, (*fim)->target_role,
                   &dsg_off, &data_off, &cs_off, &size);
-  if (size != 0)
-    if (DegradedModeCheck(fim, peer, (*fim)->target_role, (*fim)->checksum_role,
-                          (*fim)->inode, dsg_off, &cache_handle))
-      return;
+  if (GetRole() != (*fim)->target_role
+      && DegradedModeCheck(fim, peer, (*fim)->target_role,
+                           (*fim)->inode, dsg_off, &cache_handle,
+                           size != 0))
+    return;
   // No need to modify others, just notify the truncate on cache and reply
   DSReplyOnExit replier(fim, peer);
   if (size) {
@@ -1240,14 +1251,15 @@ bool Worker::HandleAttrUpdateFim(const FIM_PTR<AttrUpdateFim>& fim,
   uint64_t state_change_id;
   GroupRole failed_role;
   DSGroupState curr_state = ds()->dsg_state(&state_change_id, &failed_role);
-  bool resyncing = curr_state == kDSGResync && failed_role == GetRole() &&
+  bool is_failed = failed_role == GetRole();
+  bool resyncing = curr_state == kDSGResync && is_failed &&
       ds()->is_inode_to_resync((*fim)->inode);
   if (curr_state == kDSGReady || curr_state == kDSGDegraded ||
+      (curr_state == kDSGRecovering && !is_failed) ||
       (curr_state == kDSGResync && !resyncing)) {
     // Ignore error -- rely on the behavior that the mtime and size is not
     // changed in case of error
     ds()->store()->GetAttr((*fim)->inode, &(*reply)->mtime, &(*reply)->size);
-    replier.SetResult(0);
   }
   return true;
 }
