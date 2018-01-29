@@ -55,11 +55,12 @@ inline const char* ToStr(DSGroupState state) {
  * Keep information related to DSG state.
  */
 struct DSGStateInfo {
-  boost::shared_mutex data_mutex; /**< reader-writer lock for fields below */
+  boost::shared_mutex state_mutex; /**< reader-writer mutex for fields below */
   uint64_t state_change_id; /**< State change ID leading to current state */
   DSGroupState dsg_state; /**< Current DSG state */
   /** Failed role for kDSGDegraded / kDSGRecovering / kDSGResync */
   GroupRole failed_role;
+  boost::shared_mutex data_mutex; /**< mutex for fields below */
   boost::unordered_set<InodeNum> to_resync; /**< Inodes awaiting resync */
   boost::unordered_set<InodeNum> resyncing; /**< Inodes under resync */
 

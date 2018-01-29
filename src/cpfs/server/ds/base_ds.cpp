@@ -188,7 +188,7 @@ IThreadFimProcessor* BaseDataServer::resync_thread_processor() {
 void BaseDataServer::set_dsg_state(
     uint64_t state_change_id, DSGroupState dsg_state, GroupRole failed_role,
     boost::unique_lock<boost::shared_mutex>* lock) {
-  MUTEX_LOCK(boost::unique_lock, dsg_state_->data_mutex, my_lock);
+  MUTEX_LOCK(boost::unique_lock, dsg_state_->state_mutex, my_lock);
   if (lock)
     lock->swap(my_lock);
   dsg_state_->state_change_id = state_change_id;
@@ -198,17 +198,20 @@ void BaseDataServer::set_dsg_state(
 
 void BaseDataServer::set_dsg_inodes_to_resync(
     boost::unordered_set<InodeNum>* inodes) {
+  MUTEX_LOCK_GUARD(dsg_state_->data_mutex);
   dsg_state_->resyncing.clear();
   dsg_state_->to_resync.clear();
   dsg_state_->to_resync.swap(*inodes);
 }
 
 bool BaseDataServer::is_inode_to_resync(InodeNum inode) {
+  MUTEX_LOCK_GUARD(dsg_state_->data_mutex);
   return dsg_state_->to_resync.find(inode) != dsg_state_->to_resync.end();
 }
 
 void BaseDataServer::set_dsg_inodes_resyncing(
     const std::vector<InodeNum>& inodes) {
+  MUTEX_LOCK_GUARD(dsg_state_->data_mutex);
   BOOST_FOREACH(const InodeNum& elt, dsg_state_->resyncing) {
     dsg_state_->to_resync.erase(elt);
   }
@@ -219,18 +222,19 @@ void BaseDataServer::set_dsg_inodes_resyncing(
 }
 
 bool BaseDataServer::is_inode_resyncing(InodeNum inode) {
+  MUTEX_LOCK_GUARD(dsg_state_->data_mutex);
   return dsg_state_->resyncing.find(inode) != dsg_state_->resyncing.end();
 }
 
 void BaseDataServer::ReadLockDSGState(
     boost::shared_lock<boost::shared_mutex>* lock) {
-  MUTEX_LOCK(boost::shared_lock, dsg_state_->data_mutex, my_lock);
+  MUTEX_LOCK(boost::shared_lock, dsg_state_->state_mutex, my_lock);
   lock->swap(my_lock);
 }
 
 void BaseDataServer::WriteLockDSGState(
     boost::unique_lock<boost::shared_mutex>* lock) {
-  MUTEX_LOCK(boost::unique_lock, dsg_state_->data_mutex, my_lock);
+  MUTEX_LOCK(boost::unique_lock, dsg_state_->state_mutex, my_lock);
   lock->swap(my_lock);
 }
 
