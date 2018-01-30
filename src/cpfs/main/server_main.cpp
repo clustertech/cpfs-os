@@ -489,7 +489,9 @@ IService* BuildDataServer(const ConfigMgr& configs) {
   ret->set_thread_group(thread_group);
   ds::IResyncFimProcessor* resync_fim_proc =
       ds::MakeResyncFimProcessor(ret.get());
-  ret->set_resync_thread_processor(kThreadFimProcessorMaker(resync_fim_proc));
+  IThreadFimProcessor* resync_thread_proc =
+      kThreadFimProcessorMaker(resync_fim_proc);
+  ret->set_resync_thread_processor(resync_thread_proc);
   ret->set_resync_fim_processor(resync_fim_proc);
   CompositeFimProcessor* ms_fim_proc = new CompositeFimProcessor;
   ret->set_ms_fim_processor(ms_fim_proc);
@@ -503,7 +505,7 @@ IService* BuildDataServer(const ConfigMgr& configs) {
   ret->set_ds_fim_processor(ds_proc);
   ds_proc->AddFimProcessor(new BaseFimProcessor);
   ds_proc->AddFimProcessor(thread_group, true);
-  ds_proc->AddFimProcessor(resync_fim_proc, true);
+  ds_proc->AddFimProcessor(resync_thread_proc, true);
   CompositeFimProcessor* fc_proc = new CompositeFimProcessor;
   ret->set_fc_fim_processor(fc_proc);
   fc_proc->AddFimProcessor(new BaseFimProcessor);
