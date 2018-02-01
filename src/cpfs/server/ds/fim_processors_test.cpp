@@ -322,9 +322,10 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeRecoveringSelf) {
 TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeResync) {
   ds_->set_dsg_state(6, kDSGRecovering, 0);
 
-  FIM_PTR<IFim> fim1;
+  FIM_PTR<IFim> fim1, fim2;
   EXPECT_CALL(*thread_group_, EnqueueAll(_))
-      .WillOnce(SaveArg<0>(&fim1));
+      .WillOnce(SaveArg<0>(&fim1))
+      .WillOnce(SaveArg<0>(&fim2));
   EXPECT_CALL(*dsg_ready_time_keeper_, Stop());
   EXPECT_CALL(*degraded_cache_, SetActive(true));
   boost::shared_ptr<MockIFimSocket> fim_socket(new MockIFimSocket);
@@ -339,6 +340,7 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeResync) {
   DSGDistressModeChangeFim& rfim1 =
       dynamic_cast<DSGDistressModeChangeFim&>(*fim1);
   EXPECT_EQ(0U, rfim1->distress);
+  EXPECT_EQ(kDeferResetFim, fim2->type());
 }
 
 TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeFromResync) {
@@ -348,10 +350,9 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeFromResync) {
   EXPECT_CALL(*durable_range_, SetConservative(false));
   EXPECT_CALL(*degraded_cache_, SetActive(false));
   EXPECT_CALL(*dsg_ready_time_keeper_, Start());
-  FIM_PTR<IFim> fim1, fim2;
+  FIM_PTR<IFim> fim1;
   EXPECT_CALL(*thread_group_, EnqueueAll(_))
-      .WillOnce(SaveArg<0>(&fim1))
-      .WillOnce(SaveArg<0>(&fim2));
+      .WillOnce(SaveArg<0>(&fim1));
   boost::shared_ptr<MockIFimSocket> fim_socket(new MockIFimSocket);
   EXPECT_CALL(*fim_socket, WriteMsg(_));
 
@@ -361,10 +362,6 @@ TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeFromResync) {
   (*fim)->failed = 0;
   (*fim)->distress = 0;
   ms_ctrl_fim_proc_->Process(fim, fim_socket);
-  DSGDistressModeChangeFim& rfim1 =
-      dynamic_cast<DSGDistressModeChangeFim&>(*fim1);
-  EXPECT_EQ(0U, rfim1->distress);
-  dynamic_cast<DeferResetFim&>(*fim2);
 }
 
 TEST_F(DsFimProcessorTest, DSMSProcDSGStateChangeShuttingDown) {

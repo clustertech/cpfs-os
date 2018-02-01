@@ -151,9 +151,12 @@ class MSCtrlFimProcessor : public MemberFimProcessor<MSCtrlFimProcessor> {
                              DSGroupState((*fim)->state),
                              (*fim)->failed, &lock);
       MUTEX_LOCK_SCOPE_LOG();
-      // Reset Fim deferring, but only after DSG state unique lock is acquired
-      if ((old_state == kDSGRecovering || old_state == kDSGResync) &&
-          (*fim)->state != kDSGRecovering && (*fim)->state != kDSGResync)
+      // Reset Fim deferring, but only after DSG state unique lock is
+      // acquired.  If there is only one phase, and it occurs in the
+      // Recovering DSG state (so defer-all is active), this resets
+      // the all-defer resync deferment which may be active in the
+      // workers.  In other cases the last resync phase will clear it.
+      if (old_state == kDSGRecovering && (*fim)->state != kDSGRecovering)
         server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
       if ((*fim)->state == kDSGReady) {
         server_->inode_removal_tracker()->SetPersistRemoved(false);
