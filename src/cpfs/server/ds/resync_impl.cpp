@@ -34,6 +34,7 @@
 #include <boost/functional/forward_adapter.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
+#include <boost/thread/reverse_lock.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/unordered_map.hpp>
@@ -480,7 +481,6 @@ class ResyncFimProcessor
    */
   bool Process(const FIM_PTR<IFim>& fim,
                const boost::shared_ptr<IFimSocket>& socket) {
-    MUTEX_LOCK_GUARD(data_mutex_);
     return MemberFimProcessor<ResyncFimProcessor>::Process(fim, socket);
   }
 
@@ -523,6 +523,7 @@ class ResyncFimProcessor
 
   bool HandleDSResyncDir(const FIM_PTR<DSResyncDirFim>& fim,
                          const boost::shared_ptr<IFimSocket>& peer) {
+    MUTEX_LOCK_GUARD(data_mutex_);
     ReplyOnExit r(fim, peer);
     if (!enabled_) {
       r.SetResult(-EINVAL);
@@ -538,6 +539,7 @@ class ResyncFimProcessor
 
   bool HandleDSResyncRemoval(const FIM_PTR<DSResyncRemovalFim>& fim,
                              const boost::shared_ptr<IFimSocket>& peer) {
+    MUTEX_LOCK_GUARD(data_mutex_);
     InodeNum num_removed = fim->tail_buf_size() / sizeof(InodeNum);
     const InodeNum* removed = reinterpret_cast<const InodeNum*>(
         fim->tail_buf());
@@ -549,6 +551,7 @@ class ResyncFimProcessor
 
   bool HandleDSResyncList(const FIM_PTR<DSResyncListFim>& fim,
                           const boost::shared_ptr<IFimSocket>& peer) {
+    MUTEX_LOCK(boost::unique_lock, data_mutex_, lock);
     if (!enabled_) {
       ReplyOnExit(fim, peer).SetResult(-EINVAL);
       return true;
@@ -563,7 +566,7 @@ class ResyncFimProcessor
            ++it)
         if (!it->second.list)
           return true;  // Defensive, no way to trigger in unit test
-      ComposeResyncList();
+      ComposeResyncList(&lock);
       for (PendingFimsMap::iterator it = pending_fims_map_.begin();
            it != pending_fims_map_.end();
            ++it) {
@@ -597,6 +600,7 @@ class ResyncFimProcessor
 
   bool HandleDSResyncPhase(const FIM_PTR<DSResyncPhaseFim>& fim,
                            const boost::shared_ptr<IFimSocket>& peer) {
+    MUTEX_LOCK(boost::unique_lock, data_mutex_, lock);
     if (!enabled_) {
       ReplyOnExit(fim, peer).SetResult(-EINVAL);
       return true;
@@ -618,7 +622,7 @@ class ResyncFimProcessor
       // TODO(Isaac): What to do if MSFimSocket is missing?
       server_->tracker_mapper()->GetMSFimSocket()->WriteMsg(efim);
     }
-    ReplyResyncPhase();
+    ReplyResyncPhase(&lock);
     return true;
   }
 
@@ -632,7 +636,7 @@ class ResyncFimProcessor
    * This method works by listing the directory of itself, deleting a
    * file if it is new in the recovering DS.
    */
-  void ComposeResyncList() {
+  void ComposeResyncList(boost::unique_lock<MUTEX_TYPE>* lock) {
     LOG(notice, Degraded, "Composing full inode lists");
     server_->inode_removal_tracker()->SetPersistRemoved(true);
     time_t max_old_ctime = std::max(
@@ -649,10 +653,18 @@ class ResyncFimProcessor
     std::string name;
     bool is_dir;
     struct stat buf;
-    while (iter->GetNext(&name, &is_dir, &buf)) {
-      InodeNum inode = InodeFromDirIter(name, is_dir);
-      if (inode)
-        updated_inodes_.insert(inode);
+    std::list<InodeNum> my_inodes;
+    {
+      boost::reverse_lock<boost::unique_lock<MUTEX_TYPE> >
+          rev(*lock);  // Reading dir is lengthy
+      while (iter->GetNext(&name, &is_dir, &buf)) {
+        InodeNum inode = InodeFromDirIter(name, is_dir);
+        if (inode)
+          my_inodes.push_back(inode);
+      }
+    }
+    BOOST_FOREACH(InodeNum inode, my_inodes) {
+      updated_inodes_.insert(inode);
     }
     {
       std::vector<InodeNum> removed =
@@ -692,7 +704,7 @@ class ResyncFimProcessor
    * Send reply to DSResyncPhaseFim previously received, using
    * information collected previously by ComposeResyncList.
    */
-  void ReplyResyncPhase() {
+  void ReplyResyncPhase(boost::unique_lock<MUTEX_TYPE>* lock) {
     size_t max_cnt = server_->configs().data_sync_num_inodes() - 1;  // 0 -> inf
     max_cnt = std::min<size_t>(max_cnt, kMaxListSize - 1) + 1;
     phase_resync_list_.clear();
@@ -715,27 +727,31 @@ class ResyncFimProcessor
       it->second.phase = 0;
     }
     {
-      boost::unique_lock<MUTEX_TYPE> lock;
+      boost::unique_lock<MUTEX_TYPE> entry_lock;
       FIM_PTR<DSResyncPhaseInodeListFim> ms_fim =
           MakePhaseInodeListFim<DSResyncPhaseInodeListFim>();
       (*ms_fim)->ds_group = server_->store()->ds_group();
       boost::shared_ptr<IReqEntry> entry =
-          server_->tracker_mapper()->GetMSTracker()->AddRequest(ms_fim, &lock);
+          server_->tracker_mapper()->GetMSTracker()->AddRequest(
+              ms_fim, &entry_lock);
       entry->OnAck(boost::bind(
           &ResyncFimProcessor::DSResyncPhaseInodeListReplied, this));
     }
     {
-      boost::unique_lock<boost::shared_mutex> lock;
-      server_->WriteLockDSGState(&lock);
+      lock->unlock();  // Don't hold data_mutex when waiting for state lock
+      boost::unique_lock<boost::shared_mutex> state_lock;
+      server_->WriteLockDSGState(&state_lock);
+      lock->lock();
       server_->set_dsg_inodes_resyncing(phase_resync_list_);
       server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
     }
     if (phase_resync_list_.empty())
-      Finalize();
+      Finalize(lock);
   }
 
   bool HandleDSResyncReady(const FIM_PTR<DSResyncReadyFim>& fim,
                            const boost::shared_ptr<IFimSocket>& peer) {
+    MUTEX_LOCK_GUARD(data_mutex_);
     if (!enabled_) {
       ReplyOnExit(fim, peer).SetResult(-EINVAL);
       return true;
@@ -776,6 +792,7 @@ class ResyncFimProcessor
 
   bool HandleDSResyncInfo(const FIM_PTR<DSResyncInfoFim>& fim,
                           const boost::shared_ptr<IFimSocket>& peer) {
+    MUTEX_LOCK_GUARD(data_mutex_);
     InodeInfo& info = inode_info_map_[(*fim)->inode];
     info.size = std::max(info.size, (*fim)->size);
     if (info.mtime < (*fim)->mtime) {
@@ -797,6 +814,7 @@ class ResyncFimProcessor
    */
   bool HandleDSResync(const FIM_PTR<DSResyncFim>& fim,
                       const boost::shared_ptr<IFimSocket>& peer) {
+    MUTEX_LOCK_GUARD(data_mutex_);
     if (!enabled_ || !CheckNumDSPending()) {
       ReplyOnExit(fim, peer).SetResult(-EINVAL);
       return true;
@@ -872,8 +890,12 @@ class ResyncFimProcessor
   /**
    * Finalize resync.
    */
-  void Finalize() {
-    server_->posix_fs()->Sync();
+  void Finalize(boost::unique_lock<MUTEX_TYPE>* lock) {
+    {
+      boost::reverse_lock<boost::unique_lock<MUTEX_TYPE> >
+          rev(*lock);  // sync is lengthy
+      server_->posix_fs()->Sync();
+    }
     if (completion_handler_)
       completion_handler_(true);
     Reset();
