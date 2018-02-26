@@ -337,7 +337,7 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
   bool IsDSGDegraded(GroupRole* failed_ret, InodeNum inode) {
     uint64_t state_change_id;
     DSGroupState state = ds()->dsg_state(&state_change_id, failed_ret);
-    if (state == kDSGDegraded)
+    if (state == kDSGDegraded || state == kDSGRecovering)
       return true;
     return state == kDSGResync && ds()->is_inode_to_resync(inode)
         && !ds()->is_inode_resyncing(inode);
@@ -1129,10 +1129,22 @@ bool Worker::HandleTruncateData(
     const boost::shared_ptr<IFimSocket>& peer) {
   ds()->tracer()->Log(__func__, (*fim)->inode, kNotClient);
   GroupRole role = GetRole();
-  if (role == (*fim)->checksum_role
-      && (*fim)->target_role != (*fim)->checksum_role) {
-    DegradedTruncateData(fim, peer);
-    return true;
+  if (role == (*fim)->checksum_role) {
+    if ((*fim)->target_role != (*fim)->checksum_role) {
+      DegradedTruncateData(fim, peer);
+      return true;
+    }
+    uint64_t state_change_id;
+    GroupRole failed_role;
+    DSGroupState curr_state = ds()->dsg_state(&state_change_id, &failed_role);
+    bool resyncing = curr_state == kDSGResync &&
+        failed_role == GetRole() &&
+        ds()->is_inode_to_resync((*fim)->inode);
+    if (resyncing) {  // Simply ignore if the inode is awaiting resync
+      DSReplyOnExit replier(fim, peer);
+      replier.SetResult(0);
+      return true;
+    }
   }
   // This lock needs to be put before the replier, to guarantee that
   // the reply is sent before the reply to the replication is handled.

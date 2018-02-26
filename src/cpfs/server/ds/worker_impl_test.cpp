@@ -1513,6 +1513,28 @@ TEST_F(DSWorkerTest, TruncateDataFimDegraded) {
   Mock::VerifyAndClear(rec_mgr_);
 }
 
+TEST_F(DSWorkerTest, TruncateDataFimChecksumToResync) {
+  FIM_PTR<IFim> reply;
+  InodeNum inode = kNumDSPerGroup;
+  PrepareCalls(1, inode);
+  EXPECT_CALL(*m_fim_socket_, WriteMsg(_))
+      .WillOnce(SaveArg<0>(&reply));
+
+  FIM_PTR<TruncateDataFim> fim(new TruncateDataFim);
+  (*fim)->inode = inode;
+  (*fim)->dsg_off = kSegmentSize + 100;
+  (*fim)->target_role = 1;
+  (*fim)->checksum_role = 1;
+  data_server_.set_dsg_state(2, kDSGResync, 1);
+  boost::unordered_set<InodeNum> to_resync;
+  to_resync.insert(inode);
+  data_server_.set_dsg_inodes_to_resync(&to_resync);
+  worker_->Process(fim, m_fim_socket_);
+  ResultCodeReplyFim& rreply = dynamic_cast<ResultCodeReplyFim&>(*reply);
+  EXPECT_EQ(0U, rreply->err_no);
+  EXPECT_TRUE(reply->is_final());
+}
+
 TEST_F(DSWorkerTest, MtimeUpdateFim) {
   FIM_PTR<MtimeUpdateFim> fim(new MtimeUpdateFim);
   (*fim)->inode = 132;

@@ -1200,9 +1200,14 @@ void Worker::DSTruncate(const FSTime& optime, InodeNum inode,
       (*req)->last_off = size;
       (*req)->target_role = role;
       (*req)->checksum_role = segments[i].dsr_checksum;
-      if ((state == kDSGDegraded || state == kDSGResync) && role == failed) {
-        if (state == kDSGDegraded && role == (*req)->checksum_role)
+      if ((state == kDSGDegraded || state == kDSGRecovering ||
+           state == kDSGResync) && role == failed) {
+        if (state != kDSGResync && role == (*req)->checksum_role)
           continue;
+        // If state is kDSGResync, the previously failed DS might be
+        // working like an active DS for this inode, so we need to
+        // send the Fim.  The DS identifies the case where the inode
+        // is still awaiting resync, and ignore the Fim if so.
         target = (*req)->checksum_role;  // Redirect
       }
       boost::shared_ptr<IReqTracker> ds_tracker = ms()->

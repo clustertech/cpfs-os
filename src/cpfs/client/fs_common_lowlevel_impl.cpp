@@ -455,7 +455,8 @@ boost::shared_ptr<IReqTracker> FSCommonLL::GetDSTracker(
     GroupId group, GroupRole role, GroupRole checksum) {
   GroupRole failed;
   DSGroupState state = client_->dsg_state(group, &failed);
-  if ((state == kDSGDegraded || state == kDSGResync) && role == failed) {
+  if ((state == kDSGDegraded || state == kDSGRecovering
+       || state == kDSGResync) && role == failed) {
     LOG(debug, Degraded, "Sending degraded operation for ", PINT(role),
         " to ", PINT(checksum));
     role = checksum;

@@ -150,7 +150,7 @@ void DSLocker::Lock(
     DSGroupState state = server_->topology_mgr()->
         GetDSGState(*group_it, &failed);
     for (unsigned int role = 0; role < kNumDSPerGroup; ++role) {
-      if (state != kDSGReady && role == failed)
+      if (state == kDSGDegraded && role == failed)
         continue;
       boost::shared_ptr<MetaDSLock> lock(
           new MetaDSLock(tracker_mapper->GetDSTracker(*group_it, role),

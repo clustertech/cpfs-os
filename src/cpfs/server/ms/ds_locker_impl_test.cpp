@@ -71,8 +71,8 @@ TEST(DSLockerTest, Basic) {
   EXPECT_CALL(*topology_mgr, GetDSGState(3, _))
       .WillOnce(Return(kDSGReady));
   EXPECT_CALL(*topology_mgr, GetDSGState(1, _))
-      .WillOnce(DoAll(SetArgPointee<1>(1),  // DS1-2 recovering
-                      Return(kDSGRecovering)));
+      .WillOnce(DoAll(SetArgPointee<1>(1),  // DS1-2 degraded
+                      Return(kDSGDegraded)));
   for (unsigned i = 0; i < kNumDSPerGroup; ++i) {
     EXPECT_CALL(*tracker_mapper, GetDSTracker(3, i))
         .WillRepeatedly(Return(trackers[i]));
