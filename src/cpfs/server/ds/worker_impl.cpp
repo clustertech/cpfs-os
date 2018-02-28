@@ -339,8 +339,7 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
     DSGroupState state = ds()->dsg_state(&state_change_id, failed_ret);
     if (state == kDSGDegraded || state == kDSGRecovering)
       return true;
-    return state == kDSGResync && ds()->is_inode_to_resync(inode)
-        && !ds()->is_inode_resyncing(inode);
+    return state == kDSGResync && ds()->is_inode_to_resync(inode);
   }
 
   bool IsDSFailed(GroupRole role, InodeNum inode) {
