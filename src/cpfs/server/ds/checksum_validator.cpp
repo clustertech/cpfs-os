@@ -121,7 +121,7 @@ class DSGroupValidator : boost::noncopyable {
         SetInodeIter(inode_lister_idx_ + 1);
         continue;
       }
-      if (name.size() < 4)
+      if (name.size() < 6)
         continue;
       name = StripPrefixInodeStr(name);
       if (name.substr(name.size() - 2) == ".d" && !is_dir) {
