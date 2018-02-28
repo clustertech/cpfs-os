@@ -1499,8 +1499,7 @@ TEST_F(DSWorkerTest, TruncateDataFimDegraded) {
   EXPECT_CALL(*cache_handle, Write(100, _, kSegmentSize - 100, _))
       .WillOnce(SaveArg<3>(&csu_buf));
   const void* cs_buf;
-  EXPECT_CALL(*store_, ApplyDelta(inode, Ref((*fim)->optime),
-                                  kSegmentSize + 1000,
+  EXPECT_CALL(*store_, ApplyDelta(inode, Ref((*fim)->optime), 0,
                                   100, _, kSegmentSize - 100, true))
       .WillOnce(DoAll(SaveArg<4>(&cs_buf),
                       Return(0)));

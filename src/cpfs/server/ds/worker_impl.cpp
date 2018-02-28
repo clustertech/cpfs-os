@@ -1182,7 +1182,7 @@ bool Worker::HandleTruncateData(
     (*update_fim)->inode = (*fim)->inode;
     (*update_fim)->optime = (*fim)->optime;
     (*update_fim)->dsg_off = dsg_off;
-    (*update_fim)->last_off = (*fim)->last_off;
+    (*update_fim)->last_off = 0;
     boost::shared_ptr<IOpCompletionChecker> checker =
         ds()->op_completion_checker_set()->Get((*fim)->inode);
     boost::shared_ptr<IReqTracker> tracker = ds()->tracker_mapper()->
@@ -1221,7 +1221,7 @@ void Worker::DegradedTruncateData(
     char buf[kSegmentSize], cs_buf[kSegmentSize];
     std::memset(buf, '\0', size);
     cache_handle->Write(data_off % kSegmentSize, buf, size, cs_buf);
-    ds()->store()->ApplyDelta((*fim)->inode, (*fim)->optime, (*fim)->last_off,
+    ds()->store()->ApplyDelta((*fim)->inode, (*fim)->optime, 0,
                               DsgToChecksumOffset(dsg_off), cs_buf, size);
   }
   replier.SetResult(0);
