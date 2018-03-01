@@ -374,8 +374,13 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
                          boost::shared_ptr<IDegradedCacheHandle>*
                          cache_handle_ret,
                          bool do_recover = true) {
-    GroupRole failed;
-    if (!IsDSGDegraded(&failed, inode) || failed != target_role) {
+    // TruncateDataFim needs special treatment: MS may be earlier than
+    // the DS to learn the DS resync completion for the inode, and at
+    // such times the inode will still be resyncing in the DS.  It
+    // should be handled as if the inode has already finished
+    // resyncing (otherwise the MS should not be processing the truncate).
+    if (!IsDSFailed(target_role, inode) ||
+        (fim->type() == kTruncateDataFim && ds()->is_inode_resyncing(inode))) {
       LOG(informational, Degraded, "Inappropriate degraded msg, ", PVal(fim));
       FIM_PTR<NotDegradedFim> redirect_req =
           NotDegradedFim::MakePtr();
@@ -1154,8 +1159,7 @@ bool Worker::HandleTruncateData(
   // Skip the processing and just reply if in data resync and
   // truncation is done to an inode about to resync (happen during DS
   // resync)
-  GroupRole failed;
-  if (IsDSGDegraded(&failed, (*fim)->inode) && failed == GetRole()) {
+  if (IsDSFailed(GetRole(), (*fim)->inode)) {
     replier->SetResult(0);
     return true;
   }
