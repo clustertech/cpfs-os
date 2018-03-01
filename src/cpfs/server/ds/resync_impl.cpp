@@ -713,6 +713,14 @@ class ResyncFimProcessor
       phase_resync_list_.push_back(inode);
       resync_list_.pop_back();
     }
+    {
+      lock->unlock();  // Don't hold data_mutex when waiting for state lock
+      boost::unique_lock<boost::shared_mutex> state_lock;
+      server_->WriteLockDSGState(&state_lock);
+      lock->lock();
+      server_->set_dsg_inodes_resyncing(phase_resync_list_);
+      server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
+    }
     LOG(informational, Degraded, "Sending resync inode list, size ",
         PVal(phase_resync_list_.size()));
     for (PendingFimsMap::iterator it = pending_fims_map_.begin();
@@ -736,14 +744,6 @@ class ResyncFimProcessor
               ms_fim, &entry_lock);
       entry->OnAck(boost::bind(
           &ResyncFimProcessor::DSResyncPhaseInodeListReplied, this));
-    }
-    {
-      lock->unlock();  // Don't hold data_mutex when waiting for state lock
-      boost::unique_lock<boost::shared_mutex> state_lock;
-      server_->WriteLockDSGState(&state_lock);
-      lock->lock();
-      server_->set_dsg_inodes_resyncing(phase_resync_list_);
-      server_->thread_group()->EnqueueAll(DeferResetFim::MakePtr());
     }
     if (phase_resync_list_.empty())
       Finalize(lock);
