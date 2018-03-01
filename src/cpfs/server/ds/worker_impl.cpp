@@ -1128,11 +1128,11 @@ bool Worker::HandleTruncateData(
     const boost::shared_ptr<IFimSocket>& peer) {
   ds()->tracer()->Log(__func__, (*fim)->inode, kNotClient);
   GroupRole role = GetRole();
+  if (role != (*fim)->target_role) {
+    DegradedTruncateData(fim, peer);
+    return true;
+  }
   if (role == (*fim)->checksum_role) {
-    if ((*fim)->target_role != (*fim)->checksum_role) {
-      DegradedTruncateData(fim, peer);
-      return true;
-    }
     uint64_t state_change_id;
     GroupRole failed_role;
     DSGroupState curr_state = ds()->dsg_state(&state_change_id, &failed_role);
@@ -1209,10 +1209,9 @@ void Worker::DegradedTruncateData(
   std::size_t dsg_off = (*fim)->dsg_off, data_off, cs_off, size;
   GetTruncateArgs((*fim)->inode, (*fim)->target_role,
                   &dsg_off, &data_off, &cs_off, &size);
-  if (GetRole() != (*fim)->target_role
-      && DegradedModeCheck(fim, peer, (*fim)->target_role,
-                           (*fim)->inode, dsg_off, &cache_handle,
-                           size != 0))
+  if (DegradedModeCheck(fim, peer, (*fim)->target_role,
+                        (*fim)->inode, dsg_off, &cache_handle,
+                        size != 0))
     return;
   // No need to modify others, just notify the truncate on cache and reply
   DSReplyOnExit replier(fim, peer);

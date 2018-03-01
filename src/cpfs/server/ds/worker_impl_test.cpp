@@ -1303,7 +1303,8 @@ TEST_F(DSWorkerTest, TruncateDataFimToResync) {
   FIM_PTR<TruncateDataFim> fim(new TruncateDataFim);
   InodeNum inode = (*fim)->inode = 42;
   (*fim)->dsg_off = 0;
-  (*fim)->checksum_role = kNumDSPerGroup - 1;
+  (*fim)->target_role = 1;
+  (*fim)->checksum_role = 1;
   FIM_PTR<IFim> reply;
   PrepareCalls(1, inode);
   EXPECT_CALL(*m_fim_socket_, WriteMsg(_))
@@ -1324,6 +1325,7 @@ TEST_F(DSWorkerTest, TruncateDataFimSelf) {  // Truncate offset is myself
   FIM_PTR<TruncateDataFim> fim(new TruncateDataFim);
   InodeNum inode = (*fim)->inode = kNumDSPerGroup;
   (*fim)->dsg_off = kSegmentSize + 100;
+  (*fim)->target_role = 1;
   (*fim)->checksum_role = kNumDSPerGroup - 1;
   FIM_PTR<IFim> reply;
   FSTime& optime = (*fim)->optime;
@@ -1357,6 +1359,7 @@ TEST_F(DSWorkerTest, TruncateDataFimAfter) {  // Truncate offset is after me
   FIM_PTR<TruncateDataFim> fim(new TruncateDataFim);
   InodeNum inode = (*fim)->inode = kNumDSPerGroup;
   (*fim)->dsg_off = kChecksumGroupSize + kSegmentSize + 100;
+  (*fim)->target_role = kNumDSPerGroup - 1;
   (*fim)->checksum_role = kNumDSPerGroup - 2;
   FIM_PTR<IFim> reply;
   FSTime& optime = (*fim)->optime;
@@ -1399,6 +1402,7 @@ TEST_F(DSWorkerTest, TruncateDataFimFailChecksumSending) {
   fim->set_req_id(42);
   (*fim)->inode = inode;
   (*fim)->dsg_off = kSegmentSize + 100;
+  (*fim)->target_role = 1;
   (*fim)->checksum_role = kNumDSPerGroup - 1;
   worker_->Process(fim, m_fim_socket_);
   FinalReplyFim& r_reply = static_cast<FinalReplyFim&>(*second_reply);
@@ -1422,7 +1426,7 @@ TEST_F(DSWorkerTest, TruncateDataFimChecksumDegraded) {
   FIM_PTR<TruncateDataFim> fim(new TruncateDataFim);
   (*fim)->inode = inode;
   (*fim)->dsg_off = kSegmentSize + 100;
-  (*fim)->target_role = 0;
+  (*fim)->target_role = 1;
   (*fim)->checksum_role = kNumDSPerGroup - 1;
   data_server_.set_dsg_state(2, kDSGDegraded, kNumDSPerGroup - 1);
   worker_->Process(fim, m_fim_socket_);
@@ -1523,7 +1527,7 @@ TEST_F(DSWorkerTest, TruncateDataFimChecksumToResync) {
   (*fim)->inode = inode;
   (*fim)->dsg_off = kSegmentSize + 100;
   (*fim)->target_role = 1;
-  (*fim)->checksum_role = 1;
+  (*fim)->checksum_role = 0;
   data_server_.set_dsg_state(2, kDSGResync, 1);
   boost::unordered_set<InodeNum> to_resync;
   to_resync.insert(inode);
