@@ -1025,7 +1025,15 @@ bool Worker::HandleRecoveryData(
     if (!unqueued)
       break;
     try {
-      Process_(unqueued, q_peer);
+      // Check client-originated Fims again for resync.
+      // Server-originated Fims should already have other means to
+      // ensure that they will not be requested in the middle of
+      // resync, any requests received need to be responded to right
+      // away to prevent deadlock.
+      if (unqueued->type() == kTruncateDataFim
+          || unqueued->type() == kChecksumUpdateFim
+          || !resync_deferment_.ProcessFimDefer(unqueued, q_peer))
+        Process_(unqueued, q_peer);
     } catch (const std::exception& ex) {
       LOG(error, Degraded, "Exception when handling deferred Fim ",
           PVal(unqueued), ": ", ex.what());
