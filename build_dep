@@ -3,12 +3,13 @@ set -e
 SCRIPTDIR=$(readlink -f $(dirname "${BASH_SOURCE[0]}"))
 SRCDIR=ext-src
 STLSOFT_SRC=https://codeload.github.com/synesissoftware/STLSoft-1.9/zip/STLSoft-1.9.131
-PANTHEIOS_SRC=https://excellmedia.dl.sourceforge.net/project/pantheios/Pantheios%20%28C%20and%20Cxx%29/1.0.1%20%28beta%20216%29/pantheios-1.0.1-beta216.zip
+PANTHEIOS_SRC=https://downloads.sourceforge.net/project/pantheios/Pantheios%20%28C%20and%20Cxx%29/1.0.1%20%28beta%20216%29/pantheios-1.0.1-beta216.zip?use_mirror=autoselect
 GTEST_SRC=https://github.com/google/googletest/archive/release-1.8.0.zip
 
 STLSOFT_ARC=$(basename ${STLSOFT_SRC})
 STLSOFT_NAME=${STLSOFT_ARC%.*}-${STLSOFT_ARC}
 PANTHEIOS_ARC=$(basename ${PANTHEIOS_SRC})
+PANTHEIOS_ARC=${PANTHEIOS_ARC%\?*}
 PANTHEIOS_NAME=${PANTHEIOS_ARC%.zip}
 GTEST_ARC=$(basename ${GTEST_SRC})
 GTEST_NAME=googletest-${GTEST_ARC%.zip}
