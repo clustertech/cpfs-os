@@ -2,54 +2,43 @@
 
 Thank you for using the open-source version of CPFS, the ClusterTech
 Parallel File System.  CPFS provides you with a high-performance
-distributed parallel filesystem which is fault tolerant while being
-very easy to set up.  The interface is highly POSIX compliant, so most
-applications do not need to be rewritten to enjoy the high speed and
-fault tolerance provided by CPFS.  In this document, we guide you
-through the set up procedures.  But you need some basic concepts first.
+distributed parallel file system which is fault tolerant and simple to
+set up.  The interface is highly POSIX compliant, so most applications
+do not need to be rewritten to enjoy the high speed and fault
+tolerance provided by CPFS.  In this document, we guide you through
+the set up procedures.  But you need some basic concepts first.
 
 There are three components in a CPFS cluster:
 
-*DS (The data server)*
-: A data server is a daemon process which stores the actual filesystem
-data in a local directory.  DSs organize themselves into one or more
-DS group(s) of 5 (a compile-time constant, see `kNumDSPerGroup` in
-`cpfs/common.hpp` if you want to change it).  In case one DS of a
+*DS (Data server)*
+: A data server is a daemon process which stores the actual file
+system data in a local directory.  DSs organize themselves into one or
+more DS group(s) of 5 (a compile-time constant, see `kNumDSPerGroup`
+in `cpfs/common.hpp` if you want to change it).  In case one DS of a
 group is lost, the group will continue to operate in degraded mode,
 akin to how a RAID-5 disk array continues to work after losing one
-disk.  If a previously failed DS is restarted, it resynchronizes
-modified files since the failure with other DSs automatically.  If a
-new DS is used instead, all files will be resynchronized.  During the
-resynchronization process, filesystem requests will queue waiting for
-its completion and will not be responsive.
+disk.  If the failed DS is restarted or replaced, it resynchronizes
+the content with other DSs automatically.  The resynchronization is
+split into phases.  During each phase, requests to a certain number
+(by default 32) of files will queue waiting for the completion of
+their resynchronization.  There is also an initial period of
+resynchronization when all file system requests will queue waiting, to
+allow the system to generate a list of files to resynchronize.  This
+period is brief for a restarted DS, but long for a replaced DS.
 
-There are two implications.  Firstly, the system will experience only
-a short period of time that the server is not responsive when a server
-is lost.  But when a data server is restarted, the amount of
-unresponsive time depends on the amount of data to resynchronize: the
-larger the amount of data to resynchronize, the longer the
-interruption.
-
-Secondly, the amount of data to resynchronize depends on the total
-size of files to resynchronize.  If files are relatively small, and
-only a few files are modified, the interruption is very short.  In
-contrast, if many files are modified, and they are large, the
-interruption can be very long.
-
-*MS (The metadata server)*
+*MS (Metadata server)*
 : A metadata server is a daemon process which stores metadata in a
 local directory.  Up to two MS may be set up to provide fault
 tolerance.  At any time, one MS is active while the other (if
 configured) runs as a standby.  If the standby server finds that the
 active server is lost and the DSs connect to it, it will take over and
-become the active server automatically.  Similar to DS,
-resynchronization of a restarted MS is automatic, and leads to
-interruption of service in form of unresponsive server.
+become the active server automatically.  During the resynchronization
+process, file system requests will queue waiting for its completion.
 
-*FC (The filesystem client, mount points)*
-: A filesystem client is a FUSE based daemon process which talks to
+*FC (File system client, mount points)*
+: A file system client is a FUSE based daemon process which talks to
 the CPFS servers when a mount point is accessed by other local
-programs, in order to provide a POSIX filesystem interface at the
+programs, in order to provide a POSIX file system interface at the
 mount point.
 
 An example of a simple CPFS network is as follows.
@@ -58,14 +47,17 @@ An example of a simple CPFS network is as follows.
 
 # Planning the cluster #
 
+Here are a few precautions to ensure smooth installation and running
+of the CPFS system.
+
 ## Hardware ##
 
 CPFS works with various kinds of block storage devices and x86
-machines.  For best performance and fault tolerance, it is recommended
-to run MSs, DSs and FCs on separated machines, and run MSs and DSs on
-machines with at least 4 CPU cores and 4 GB of memory.  It is possible
-for the same host to serve both as a MS and a DS, although this is not
-highly recommended.
+machines.  For best performance and data availability, it is
+recommended to run MSs, DSs and FCs on separated machines, and run MSs
+and DSs on machines with at least 4 CPU cores and 4 GB of memory.  It
+is possible for the same host to serve both as a MS and a DS, although
+this is not highly recommended.
 
 ## Operating System ##
 
@@ -75,21 +67,28 @@ is easy to create suitable binary for each of these distributions
 using Docker.  These build scripts are very simple, and can be adapted
 to other distributions relatively easily.
 
-## Storage ##
+CPFS server can be installed on a minimal installation of the
+operating system.  CPFS clients have additional package dependencies
+on `fuse` and its library package.
 
-To ease disk space management, we recommend dedicating a hard disk
-partition for the local directory of each MS and DS.  It is best to
-use XFS for these partitions and format with option `-n ftype=1`
-(if supported by your `mkfs.xfs`), although ext4 or other
-filesystems supporting extended user attributes may also be used.  Due
-to RAID-5 like redundancy in DSs, the storage capacity provided by a
-DS group is around 4 times the least capacity of the DSs among the
-group.  Each file in the filesystem is represented by around 3 files
-in each MS.  So it is important that the MSs has ample amount of
-inodes available for use.  Most of these files are single block files,
-so very little space is used by files in the MS, other than the inode
-usage.  When formatting the local directory for use by the MS, these
-should be taken into account.
+## Local Storage ##
+
+Each CPFS server stores data to a local file system, where part of the
+data is kept in extended attributes.  To ease disk space management,
+we recommend dedicating an XFS partition for each MS and DS,
+preferably with format option `-n ftype=1` and mount option `inode64`
+(newer operating systems have these as default).
+
+The storage capacity provided by a DS group is around 4 times the
+smallest DS local file system, due to the parity nature of CPFS.  The
+MS local file system capacity have little effect on the total capacity
+of CPFS.
+
+Each file in the file system is backed by 2 files in each DS and 3
+files in each MS.  Therefore, it is important for the local file
+systems to have enough inodes for use.  A local XFS file system can
+have more inodes allocated with the `imaxpct` option, which can be
+adjusted with the command `xfs_growfs -m` without remounting.
 
 To make the servers write data to storage earlier, we recommend using
 a small value, say 67108864 (i.e., 64 MB), for the kernel sysctl
@@ -98,14 +97,14 @@ adding a line to `/etc/rc.d/rc.local`:
 
     echo 67108864 > /proc/sys/vm/dirty_background_bytes
 
-This replaces the use of the `dirty_background_ratio` setting.  You
-should also observe other suggestions found in `/etc/rc.d/rc.local`,
-which differs from version to version.
+This overrides the `dirty_background_ratio` setting.  You should also
+observe other suggestions found in `/etc/rc.d/rc.local`, which differs
+from version to version.
 
 ## Networking ##
 
 For high performance we recommend using a high-performance backend
-network for the CPFS servers, typically an InfiniBand (IB) or 10G
+network for the CPFS servers, e.g., an InfiniBand (IB) or 10/40G
 Ethernet network.  The system itself makes no assumption about network
 speed, though, so a simple NFS replacement without performance
 concerns can be created using a 100Mbps network.
@@ -114,7 +113,8 @@ The CPFS programs use an IP network.  If InfiniBand is used, we depend
 on IPoIB for connectivity.  For the best performance, it is a good
 idea to set the MTU of the IP network to be sufficiently high so that
 most network transfers need not be fragmented.  We recommend an MTU of
-at least 34000 if allowed by the network.
+at least 34000 (maximum 65520) if allowed by the network.  Note that
+the MTU value has to be consistent across the whole InfiniBand subnet.
 
 # CPFS Installation #
 
@@ -128,6 +128,7 @@ The CPFS installation procedures include the following steps:
     DSs and FCs.
   * Configuring the clients, by setting up `/etc/fstab` in FCs.
   * Starting CPFS, by starting up the servers and then the clients.
+  * Optionally, expand capacity by adding more DS groups.
 
 These steps are discussed in the sections below.
 
@@ -146,7 +147,7 @@ localinstall <filename>` (after `yum install epel-release` for CentOS
     files to use for the init scripts.
   * `usr/sbin/mount.cpfs`: helper script for clients to mount CPFS.
   * `usr/local/sbin/cpfs_server` and `usr/local/sbin/cpfs_client`:
-    actual filesystem server and client.
+    actual file system server and client.
   * `usr/local/sbin/cpfs_keygen`: A small program to generate a shared
     secret.
   * `usr/local/sbin/cpfs_cli`: Command line interface to monitor and
@@ -176,6 +177,7 @@ and then run `service iptables reload`.  In CentOS 7 or recent Fedora,
 you would instead run:
 
     firewall-cmd --zone=public --add-port=5000/tcp
+    firewall-cmd --zone=public --add-port=5000/tcp --permanent
 
 in all MS servers.
 
@@ -198,16 +200,15 @@ model, by setting `MS_PERMS` as 1, and removing the
 `default_permissions` option when mounting the FCs.  This shifts the
 checking to the MS instead.  The differences include:
 
-  * The FC-based permission model works better with supplementary
-    groups in SUID programs.  With MS-based permission model, SUID
-    programs will not be able to gain access to files using
-    supplementary groups of the original user, but will instead access
-    files using supplementary groups of the user of the owner of the
-    program.
-  * The MS-based permission model supports the use of POSIX Access
-    Control List (ACL), which also requires that extended attributes
-    are not disabled.  FC-based permission model ignores ACLs set,
-    because FUSE does not support it.
+  * *Supplementary groups of SUID programs*: With FC-based permission
+    model, supplementary groups of the user running an SUID program
+    determines the permissions, consistent with local file system
+    accesses.  With MS-based permission model, supplementary groups of
+    the owner of the SUID program is used instead.
+  * *POSIX Access Control List (ACL)*: If extended attributes are not
+    disabled, ACL are observed when using the MS-based permission
+    model.  Access Control List extended attributes are ignored in
+    FC-based permission model.
 
 Note that you should also setup the client appropriately to select one
 of the permission models.
@@ -223,7 +224,7 @@ In `cpfs-data`:
 
 The directory where file data is stored in data servers.  It should
 have permission 0700.  You should not modify the directory in any way
-other than through CPFS, as it may lead to data inconsistency.
+other than through CPFS, as it may lead to data inconsistencies.
 
     DS_HOST=192.168.133.20
     DS_PORT=5500
@@ -254,10 +255,9 @@ by root, and distributed to all clients and servers running CPFS at
 
 ## Configuring Clients ##
 
-Running an FC involves running the `mount` command with slightly complex
-options.  Normally the `/etc/fstab` file is set up so that this is done
-automatically during startup.  The `cpfs_configure_client` utility
-may be used to create an such entry:
+Typically, an entry in the `/etc/fstab` file is set up so that you can
+mount the file system client easily with `mount <mount point>`.  The
+`cpfs_configure_client` utility may be used to create an such entry:
 
     $ sudo cpfs_configure_client
     Enter the meta server(s): (IP1:Port,IP2:Port) 192.168.0.1:5000
@@ -269,7 +269,8 @@ may be used to create an such entry:
     default_permissions,_netdev 0 0
     Continue? (y/n)
 
-You may also mount the FC manually by:
+Without the entry, you can still specify the information via mount
+options:
 
     $ sudo mount -t cpfs <meta server ip:port> <mount point> \
     > -o log-path=<log path>,default_permissions
@@ -366,6 +367,10 @@ monitoring and management.  The following commands are supported:
 
 To start `cpfs_cli`, use:
 
+    $ sudo cpfs_cli [command]
+
+Or, to specify the MS,
+
     $ sudo cpfs_cli --meta-server=<ip:port of MS1>[,ip:port of M2] [command]
 
 If run on one of the MS, --meta-server parameter is not needed (it is
@@ -375,6 +380,60 @@ In case two MSs (HA mode) are used, CPFS normally waits until both are
 up and running before serving.  In case only one is in operation, you
 may use `cpfs_cli` and specifiy the `--force-start=true` option to
 start CPFS even when the slave MS is still missing.
+
+# Stopping the Cluster #
+
+The CPFS system can be stopped using `cpfs_cli`.  Alternatively, you
+may stop CPFS by:
+
+    $ sudo kill -SIGUSR1  <PID of active MS>
+
+This causes the CPFS system, including MSs, DSs and FCs, to shutdown.
+
+# Stopping CPFS Clients #
+
+A FC may be disconnected from the CPFS servers by `umount`.  Under
+some scenarios (e.g., CPFS already crashed due to multiple faults, or
+bugs in FUSE or CPFS), it is possible that `umount` is unable to
+complete.  In such cases, you can use the `fusectl` file system to
+abort the FC without shutting down the machine running it.  You should
+first mount the `fusectl` file system, if it has not already been
+mounted:
+
+    $ sudo mount -t fusectl fusectl /sys/fs/fuse/connections/
+
+After that, you can find directories under `/sys/fs/fuse/connections`
+with numeric names like `20`.  They are device numbers of FUSE file
+systems.  Device numbers of all mounted file systems can be found in
+the file `/proc/self/mountinfo`.  Inspecting the file allowing you to
+find the directory corresponding to CPFS in case there are multiple
+FUSE file systems in your system.
+
+One of the files in that directory is called `abort`.  Writing
+anything into the file will abort all CPFS operations: all incomplete
+and new requests will immediately receive failure reply.  It also
+kills the CPFS client process.  At this point you should be able to
+`umount` the file system.
+
+## Restarting or Replacing a Server ##
+
+CPFS can continue its service when a single DS/MS is down.  If the
+DS/MS is restarted, it rejoins the cluster.  The CPFS cluster will
+then be paused for resynchronization.  For MS restarts, the system
+pauses until the resynchronization completes.  For DS restarts, it
+pauses until the files requiring resynchronization are determined.
+After that, file resynchronization are performed in phases.  In each
+phase, accesses to a small number of files are paused until these
+files finish resynchronization.  Resynchronization progress can be
+found in the CPFS server log (e.g., `/var/log/cpfs.log`).
+
+If the local file system is damaged beyond repair, do not restart the
+system with a data directory restored from backup.  The out-of-sync
+backup would confuse CPFS and damage the file contents.  Instead,
+prepare a new server by reinstalling from scratch (with the same IP
+addresses) or by restoring from backup.  For the latter option, the
+content of `METADATA_PATH` and `DATA_PATH` directories of the new
+server must be removed before restarting.
 
 ## Troubleshooting ##
 
@@ -388,31 +447,6 @@ environment.  For FCs, you may enable FUSE debugging by passing `-o
     $ sudo mount -t cpfs ... -o log-path=<log path> -o -d
 
 Apart from that, the `SIGUSR2` signal can be sent to the CPFS server
-or mount client program to show in log files some information about
-the messages that are awaiting processing, and the recent requests
+or client program to show in log files some information about the
+messages that are awaiting processing, and the recent requests
 received.
-
-# Shutdown #
-
-The CPFS system can be stopped using `cpfs_cli`.  Alternatively, you
-may stop CPFS by:
-
-    $ sudo kill -SIGUSR1  <PID of active MS>
-
-This causes the CPFS system, including MSs, DSs and FCs, to shutdown.
-
-A FC may be disconnected from the CPFS servers by `umount`.  Under
-some scenarios (e.g., CPFS already crashed due to multiple faults, or
-bugs in FUSE or CPFS), it is possible that `umount` is unable to
-complete.  In such cases, you can use the `fusectl` filesystem to
-abort the FC without shutting down the machine running it.  You should
-first mount the `fusectl` filesystem, if it has not already been
-mounted:
-
-    $ sudo mount -t fusectl fusectl /sys/fs/fuse/connections/
-
-After that, you can find a directory under `/sys/fs/fuse/connections`
-with a numeric name like `20`.  It contains a file called `abort`,
-writing anything into it will abort all CPFS operations.  I.e., all
-incomplete and new requests will immediately receive failure reply.
-At this point you should be able to `umount` the filesystem.
