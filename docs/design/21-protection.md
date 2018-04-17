@@ -2,10 +2,11 @@
 
 CPFS is a distributed system relying on connections among servers to provide
 the service. Proper protection is required to protect against users opening
-fake connections as FC or acting as a fake MS / DS to intercept data.
+fake connections as FCs or even as fake MSs / DSs to intercept data.
 
-After installation of CPFS, system administrator would generate a secret key
-using the provided tool and store to a path only accesible by root.
+After installation of CPFS, system administrator would generate a
+secret key using the provided tool, and ensure that it is accesible
+only by root.
 
 Connections are initiated in four ways: FC to MS, FC to DS, MS2 to MS1 and
 DS to MS. The following protocol is used to authenticate the connecting and
@@ -23,14 +24,8 @@ listening side:
     and CN received. If the hash value matches the one received, connection
     registration is declared successful and the server will reply normally
 
-This protocol utilizes random challenges to prevent against replay attack,
-and performs mutual authentication, however this does not prevent MITM
-evasdropping. To prevent evasdropping, the connection must be encryted but
-this will incur overhead to the performance of CPFS. Therefore, channel
-encryption is not considered.
-
-The secret key and encryption algorithm should be strong enough so that
-brute force attempt is not possible. On the other hand, the random challenge
-should be unique and random enough so that the challenge generated is not
-predictable and overlapping with challenges generated from other CPFS
-components.
+This protocol utilizes random challenges to prevent replay attack, and
+performs mutual authentication, however this does not prevent MITM
+evasdropping. To prevent evasdropping, the connection must be encryted
+but this slows down the system. Therefore, channel encryption is not
+considered.

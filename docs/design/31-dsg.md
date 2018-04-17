@@ -9,8 +9,7 @@ Upon the first start of CPFS, the total number of DS group(s) defaults
 to 1, which is reflected as a configuration value of CPFS.  This value
 can then be queried and updated using the CLI.  Setting this
 configuration value changes the number of DS groups.  Upon start-up
-and update, license is checked to ensure that the number of DS groups
-is valid, and the value is persisted to the data directory.
+and update, the value is persisted to the data directory.
 
 At first, a DS group is in the state "Creating", meaning that the
 group has not been fully connected before, and is waiting for servers
@@ -22,7 +21,7 @@ selection algorithm).
 
 Upon whole system restart, groups created before will be in "Pending"
 state while waiting for server connections.  At any time, CPFS
-operates when ALL `Created` groups become "Ready" or "Degraded", while
+operates when all `Created` groups become "Ready" or "Degraded", while
 allowing the last group to be still in the "Creating" state.  CPFS
 will be blocked when there is "Pending" group.
 
@@ -43,19 +42,16 @@ attribute is left unset, we normally create files which span only one
 DSG.  When a new directory is created, this extended attribute is
 inherited from the parent.  The user extended attributes space is
 exploited for the purpose, so that it is easy for stock utilities to
-store and manipulate the attribute.  But because of this ease, our FS
-must also able to cater for arbitrary value being set for the
-attribute.
+store and manipulate the attribute.
 
 ## DSG Selection Algorithm ##
 
 Files are allocated DSGs more or less randomly, so that each DSG tends
 to have similar loading.  However, since some files can be radically
 larger than others, it is possible that a DSG gets much higher loading
-than another DSG.  We aim to be able to cater for such situations when
-allocating them to new files, preferring DSGs that are less loaded, so
-that eventually balance is restored.  The algorithm is described as
-follows.
+than another DSG.  In such situations, when allocating DSGs to new
+files we prefer DSGs that are less loaded, so that eventually balance
+is restored.  The algorithm is described as follows.
 
 In simple words, we try to allocate DSGs in such a way that the
 probability of a DSG to be used is proportional to square of its
