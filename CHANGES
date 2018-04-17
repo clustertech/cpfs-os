@@ -1,3 +1,14 @@
+cpfs-os 1.2.2 (April 2018)
+=============
+
+* Allow DS to continue to serve client requests in most of the DS resync.
+* Add a "state changing" flag to clients, when clients will not initiate requests.
+* Fix file corruption when `truncate()` is on a file stored in a degraded DS
+  group.
+* Fix DS timeout during long resynchronizations.
+* Fix wrong file size reported upon failover.
+* FIM types are renumbered to ease FIM interpretation.
+
 cpfs-os 1.2.1 (June 2017)
 =============
 
