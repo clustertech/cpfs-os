@@ -381,7 +381,7 @@ class Worker : public BaseWorker, private MemberFimProcessor<Worker> {
     // resyncing (otherwise the MS should not be processing the truncate).
     if (!IsDSFailed(target_role, inode) ||
         (fim->type() == kTruncateDataFim && ds()->is_inode_resyncing(inode))) {
-      LOG(informational, Degraded, "Inappropriate degraded msg, ", PVal(fim));
+      LOG(debug, Degraded, "Inappropriate degraded msg, ", PVal(fim));
       FIM_PTR<NotDegradedFim> redirect_req =
           NotDegradedFim::MakePtr();
       (*redirect_req)->redirect_req = fim->req_id();
